@@ -1,0 +1,33 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>All files</h2>
+  {% if not files %}
+    <p>No files uploaded yet.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>File</th>
+        <th>SHA-256</th>
+        <th>Size</th>
+        <th>MIME</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in files %}
+      <tr>
+        <td>{{ f.uploaded_at }}</td>
+        <td><a href="{{ url_for('file_detail', file_id=f.id) }}">{{ f.filename }}</a></td>
+        <td><code class="hash">{{ f.sha256 }}</code></td>
+        <td>{{ (f.size / 1024)|round(1) }} KB</td>
+        <td>{{ f.mimetype }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

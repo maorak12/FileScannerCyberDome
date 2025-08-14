@@ -1,0 +1,24 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>YARA rules</h2>
+  <p><strong>Compiled namespaces:</strong></p>
+  {% if not compiled_namespaces %}
+    <p>- none loaded -</p>
+  {% else %}
+    <ul class="mono">
+      {% for ns in compiled_namespaces %}<li>{{ ns }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  <p><strong>Rule files found under <code>rules/</code>:</strong></p>
+  {% if not rule_files %}
+    <p>- none -</p>
+  {% else %}
+    <ul class="mono">
+      {% for rf in rule_files %}<li>{{ rf }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

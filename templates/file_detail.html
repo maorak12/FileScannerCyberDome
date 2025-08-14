@@ -1,0 +1,56 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>File details</h2>
+  <dl class="meta">
+    <dt>Filename</dt><dd>{{ file.filename }}</dd>
+    <dt>SHA-256</dt><dd><code class="hash">{{ file.sha256 }}</code></dd>
+    <dt>Uploaded at</dt><dd>{{ file.uploaded_at }}</dd>
+    <dt>Size</dt><dd>{{ (file.size / 1024)|round(1) }} KB</dd>
+    <dt>MIME</dt><dd>{{ file.mimetype }}</dd>
+  </dl>
+  <p>
+    <a class="button" href="{{ url_for('download', sha256=file.sha256) }}">Download</a>
+  </p>
+</section>
+
+<section class="card">
+  <h3>Matched YARA rules</h3>
+  {% if not rules %}
+    <p>No rules matched.</p>
+  {% else %}
+    <ul class="mono">
+      {% for r in rules %}<li>{{ r }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h3>Similar files</h3>
+  {% if not similar %}
+    <p>No similar files found.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Similarity</th>
+        <th>File</th>
+        <th>Shared rules</th>
+        <th>Uploaded</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row, score, overlap in similar %}
+      <tr>
+        <td>{{ (score*100)|round(0) }}%</td>
+        <td><a href="{{ url_for('file_detail', file_id=row.id) }}">{{ row.filename }}</a></td>
+        <td class="mono">{% if overlap %}{{ overlap|join(", ") }}{% else %}-{% endif %}</td>
+        <td>{{ row.uploaded_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

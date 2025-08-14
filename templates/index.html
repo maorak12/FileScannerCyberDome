@@ -1,0 +1,44 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Upload a file</h2>
+  {% if not yara_loaded %}
+    <p class="warning">YARA isn't loaded yet. Install <code>yara-python</code> and add rules under <code>rules/</code>, then click "Reload Rules".</p>
+  {% endif %}
+  <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">Upload & Scan</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Recent uploads</h2>
+  {% if not files %}
+    <p>No files uploaded yet.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>File</th>
+        <th>SHA-256</th>
+        <th>Size</th>
+        <th>MIME</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in files %}
+      <tr>
+        <td>{{ f.uploaded_at }}</td>
+        <td><a href="{{ url_for('file_detail', file_id=f.id) }}">{{ f.filename }}</a></td>
+        <td><code class="hash">{{ f.sha256 }}</code></td>
+        <td>{{ (f.size / 1024)|round(1) }} KB</td>
+        <td>{{ f.mimetype }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}
