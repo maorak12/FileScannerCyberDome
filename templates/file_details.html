@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}File Details - {{ file_info[1] }}{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteFileFromDetails(fileId, filename) {
+    if (confirm(`Are you sure you want to delete "${filename}"?\n\nThis action cannot be undone and will remove the file from both the database and filesystem.`)) {
+        // Show loading state
+        const deleteBtn = event.target.closest('button');
+        const originalContent = deleteBtn.innerHTML;
+        deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Deleting...';
+        deleteBtn.disabled = true;
+        
+        fetch(`/file/${fileId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message and redirect
+                alert(data.message);
+                window.location.href = '{{ url_for("list_files") }}';
+            } else {
+                throw new Error(data.error || 'Failed to delete file');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(`Error deleting file: ${error.message}`);
+            // Restore button state
+            deleteBtn.innerHTML = originalContent;
+            deleteBtn.disabled = false;
+        });
+    }
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('list_files') }}">Files</a></li>
+                <li class="breadcrumb-item active">{{ file_info[1] }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <!-- File Information -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-file-code me-2"></i>File Information
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Filename:</strong> {{ file_info[1] }}</p>
+                        <p><strong>File Hash (SHA256):</strong> 
+                            <code class="text-break">{{ file_info[2] }}</code>
+                        </p>
+                        <p><strong>File Size:</strong> {{ "{:.2f}".format(file_info[3] / (1024 * 1024)) }} MB</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Upload Date:</strong> {{ file_info[4] }}</p>
+                        <p><strong>YARA Matches:</strong> 
+                            <span class="badge bg-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
+                                {{ yara_matches|length }}
+                            </span>
+                        </p>
+                        <p><strong>File Path:</strong> <code>{{ file_info[5] }}</code></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- YARA Rule Matches -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-shield-virus me-2"></i>YARA Rule Matches
+                    <span class="badge bg-danger ms-2">{{ yara_matches|length }}</span>
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if yara_matches %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This file matched {{ yara_matches|length }} YARA rule(s), 
+                        indicating potential malicious behavior.
+                    </div>
+                    
+                    {% for match in yara_matches %}
+                    <div class="yara-match">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-2">
+                                    <i class="fas fa-bug me-2"></i>{{ match[2] }}
+                                </h6>
+                                <p class="mb-1"><strong>Rule File:</strong> {{ match[3] }}</p>
+                                {% if match[4] %}
+                                <p class="mb-1"><strong>Matched Strings:</strong></p>
+                                <pre class="bg-dark text-light p-2 rounded small">{{ match[4] }}</pre>
+                                {% endif %}
+                                {% if match[5] %}
+                                <p class="mb-0"><strong>Match Offset:</strong> {{ match[5] }}</p>
+                                {% endif %}
+                            </div>
+                            <span class="badge bg-danger">MATCH</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        <strong>Clean:</strong> No YARA rule matches found. This file appears to be clean.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Similar Files -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-search-plus me-2"></i>Similar Files
+                    <span class="badge bg-info ms-2">{{ similar_files|length }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if similar_files %}
+                    <p class="text-muted small mb-3">
+                        Files with similar YARA rule patterns (minimum 2 common rules)
+                    </p>
+                    
+                    {% for file in similar_files %}
+                    <div class="similar-file">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-2">
+                                    <i class="fas fa-file-code me-2"></i>
+                                    <a href="{{ url_for('file_details', file_id=file.id) }}" 
+                                       class="text-white text-decoration-none">
+                                        {{ file.filename }}
+                                    </a>
+                                </h6>
+                                <p class="mb-1 small">
+                                    <strong>Common Rules:</strong> {{ file.common_rules }}
+                                </p>
+                                <p class="mb-1 small">
+                                    <strong>Upload Date:</strong> {{ file.upload_date }}
+                                </p>
+                                <p class="mb-0 small">
+                                    <strong>Hash:</strong> 
+                                    <code class="text-white">{{ file.file_hash[:16] }}...</code>
+                                </p>
+                            </div>
+                            <span class="badge bg-info">{{ file.common_rules }}</span>
+                        </div>
+                        
+                        {% if file.rule_names %}
+                        <div class="mt-2">
+                            <small><strong>Shared Rules:</strong></small>
+                            <div class="mt-1">
+                                {% for rule in file.rule_names[:3] %}
+                                <span class="badge bg-light text-dark me-1">{{ rule }}</span>
+                                {% endfor %}
+                                {% if file.rule_names|length > 3 %}
+                                <span class="badge bg-light text-dark">+{{ file.rule_names|length - 3 }} more</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        No similar files found with matching YARA rules.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title">Actions</h6>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-upload me-2"></i>Upload New File
+                    </a>
+                    <a href="{{ url_for('list_files') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-list me-2"></i>View All Files
+                    </a>
+                    <button type="button" class="btn btn-outline-danger" 
+                            onclick="deleteFileFromDetails({{ file_info[0] }}, '{{ file_info[1] }}')">
+                        <i class="fas fa-trash me-2"></i>Delete File
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- File Analysis Summary -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Analysis Summary
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
+                                {{ yara_matches|length }}
+                            </h3>
+                            <p class="text-muted">YARA Matches</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h3 class="text-info">{{ similar_files|length }}</h3>
+                            <p class="text-muted">Similar Files</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h3 class="text-primary">{{ "{:.2f}".format(file_info[3] / (1024 * 1024)) }}</h3>
+                            <p class="text-muted">File Size (MB)</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
+                            {% if yara_matches|length > 0 %}SUSPICIOUS{% else %}CLEAN{% endif %}
+                        </h3>
+                        <p class="text-muted">Status</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

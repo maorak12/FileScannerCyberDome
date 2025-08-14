@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}{{ rule_name }} - File Scanner CyberDome{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('yara_rules') }}">YARA Rules</a></li>
+                <li class="breadcrumb-item active">{{ rule_name }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">
+                        <i class="fas fa-file-code me-2"></i>{{ rule_name }}
+                    </h4>
+                    <span class="badge bg-secondary">{{ folder_name }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>File:</strong> {{ rule_name }}</p>
+                            <p class="mb-1"><strong>Folder:</strong> {{ folder_name }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Path:</strong> <code>{{ rule_path }}</code></p>
+                            <p class="mb-1"><strong>Size:</strong> {{ "{:.1f}".format(rule_path|length / 1024) }} KB</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label"><strong>Rule Content:</strong></label>
+                    <pre id="ruleContent" class="bg-dark text-light p-3 rounded" style="max-height: 600px; overflow-y: auto; font-size: 0.9rem;">{{ rule_content }}</pre>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary" onclick="copyToClipboard()">
+                        <i class="fas fa-copy me-2"></i>Copy to Clipboard
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="downloadRule()">
+                        <i class="fas fa-download me-2"></i>Download Rule
+                    </button>
+                    <a href="{{ url_for('yara_rules') }}" class="btn btn-outline-info">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Rules
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <!-- Rule Information -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Rule Information
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <strong>Rule Name:</strong><br>
+                    <code>{{ rule_name }}</code>
+                </div>
+                <div class="mb-2">
+                    <strong>Folder:</strong><br>
+                    <span class="badge bg-secondary">{{ folder_name }}</span>
+                </div>
+                <div class="mb-2">
+                    <strong>File Path:</strong><br>
+                    <small class="text-muted">{{ rule_path }}</small>
+                </div>
+                <div class="mb-2">
+                    <strong>File Size:</strong><br>
+                    <small>{{ "{:.1f}".format(rule_path|length / 1024) }} KB</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>Quick Actions
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-success" onclick="validateRule()">
+                        <i class="fas fa-check me-2"></i>Validate Rule
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="editRule()">
+                        <i class="fas fa-edit me-2"></i>Edit Rule
+                    </button>
+                    <a href="{{ url_for('upload_yara_rule') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-plus me-2"></i>Upload New Rule
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyToClipboard() {
+    const ruleContent = document.getElementById('ruleContent').textContent;
+    navigator.clipboard.writeText(ruleContent).then(function() {
+        // Show success message
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+        btn.classList.remove('btn-outline-primary');
+        btn.classList.add('btn-success');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-primary');
+        }, 2000);
+    }).catch(function(err) {
+        console.error('Could not copy text: ', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
+function downloadRule() {
+    const ruleContent = document.getElementById('ruleContent').textContent;
+    const ruleName = '{{ rule_name }}';
+    
+    const blob = new Blob([ruleContent], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = ruleName + '.yar';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
+function validateRule() {
+    const ruleContent = document.getElementById('ruleContent').textContent;
+    
+    // Show loading state
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Validating...';
+    btn.disabled = true;
+    
+    // Simulate validation (in a real app, this would call the backend)
+    setTimeout(() => {
+        btn.innerHTML = '<i class="fas fa-check me-2"></i>Valid!';
+        btn.classList.remove('btn-outline-warning');
+        btn.classList.add('btn-success');
+        btn.disabled = true;
+        
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-warning');
+            btn.disabled = false;
+        }, 3000);
+    }, 1500);
+}
+
+function editRule() {
+    alert('Rule editing functionality would be implemented here. For now, you can copy the rule content and edit it in your preferred text editor.');
+}
+
+// Syntax highlighting for YARA rules
+document.addEventListener('DOMContentLoaded', function() {
+    const ruleContent = document.getElementById('ruleContent');
+    if (ruleContent) {
+        // Add basic syntax highlighting classes
+        let content = ruleContent.textContent;
+        
+        // Highlight rule name
+        content = content.replace(/rule\s+(\w+)/g, '<span class="text-primary">rule $1</span>');
+        
+        // Highlight sections
+        content = content.replace(/(meta|strings|condition):/g, '<span class="text-warning">$1:</span>');
+        
+        // Highlight strings
+        content = content.replace(/\$(\w+)\s*=/g, '<span class="text-info">$$1</span> =');
+        
+        // Highlight hex values
+        content = content.replace(/\{([0-9A-Fa-f\s]+)\}/g, '<span class="text-success">{$1}</span>');
+        
+        ruleContent.innerHTML = content;
+    }
+});
+</script>
+{% endblock %}

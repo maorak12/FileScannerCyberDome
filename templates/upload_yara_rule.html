@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Custom YARA Rule - File Scanner CyberDome{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('yara_rules') }}">YARA Rules</a></li>
+                <li class="breadcrumb-item active">Upload Custom Rule</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-plus me-2"></i>Upload Custom YARA Rule
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Important:</strong> Your YARA rule will be validated for syntax and compilation before being saved. 
+                    Only valid YARA rules will be accepted and added to the custom rules folder.
+                </div>
+                
+                <form action="{{ url_for('upload_yara_rule') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                    <div class="mb-4">
+                        <label for="yara_file" class="form-label">
+                            <strong>Select YARA Rule File</strong>
+                        </label>
+                        <div class="file-upload-area" id="dropZone">
+                            <i class="fas fa-file-code fa-3x text-primary mb-3"></i>
+                            <h5>Drag & Drop your .yar or .yara file here</h5>
+                            <p class="text-muted">or click to browse</p>
+                            <input type="file" name="yara_file" id="yara_file" class="d-none" accept=".yar,.yara">
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('yara_file').click()">
+                                <i class="fas fa-folder-open me-2"></i>Choose YARA File
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="fileInfo" class="d-none mb-3">
+                        <div class="alert alert-info">
+                            <i class="fas fa-file-code me-2"></i>
+                            <span id="fileName"></span>
+                            <span id="fileSize" class="ms-2"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="rule_preview" class="form-label">
+                            <strong>Rule Preview</strong>
+                        </label>
+                        <div id="rulePreview" class="d-none">
+                            <pre id="ruleContent" class="bg-dark text-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"></pre>
+                        </div>
+                        <div id="noFileSelected" class="text-center py-4 text-muted">
+                            <i class="fas fa-file-code fa-2x mb-2"></i>
+                            <p>Select a YARA rule file to preview its content</p>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn" disabled>
+                            <i class="fas fa-upload me-2"></i>Upload YARA Rule
+                        </button>
+                        <a href="{{ url_for('yara_rules') }}" class="btn btn-outline-secondary btn-lg ms-2">
+                            <i class="fas fa-list me-2"></i>View All Rules
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- YARA Rule Guidelines -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>YARA Rule Guidelines
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-check text-success me-2"></i>Valid Rule Structure</h6>
+                        <ul class="small">
+                            <li>Must start with <code>rule RuleName</code></li>
+                            <li>Include <code>meta</code> section for description</li>
+                            <li>Define <code>strings</code> section</li>
+                            <li>Include <code>condition</code> section</li>
+                            <li>Use proper YARA syntax</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-times text-danger me-2"></i>Common Issues</h6>
+                        <ul class="small">
+                            <li>Missing rule name</li>
+                            <li>Syntax errors in conditions</li>
+                            <li>Invalid string definitions</li>
+                            <li>Missing semicolons</li>
+                            <li>Unbalanced parentheses</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <h6><i class="fas fa-code me-2"></i>Example Rule</h6>
+                    <pre class="bg-light p-2 rounded small"><code>rule ExampleRule
+{
+    meta:
+        description = "Example YARA rule"
+        author = "Your Name"
+        date = "2024-01-01"
+    
+    strings:
+        $string1 = "example string"
+        $string2 = { 65 78 61 6D 70 6C 65 }
+    
+    condition:
+        any of them
+}</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('yara_file');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadForm = document.getElementById('uploadForm');
+    const rulePreview = document.getElementById('rulePreview');
+    const ruleContent = document.getElementById('ruleContent');
+    const noFileSelected = document.getElementById('noFileSelected');
+
+    // File input change
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            displayFileInfo(file);
+            previewRuleContent(file);
+        }
+    });
+
+    // Drag and drop functionality
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = '#764ba2';
+        dropZone.style.background = 'rgba(118, 75, 162, 0.1)';
+    });
+
+    dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = '#667eea';
+        dropZone.style.background = 'rgba(102, 126, 234, 0.1)';
+    });
+
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = '#667eea';
+        dropZone.style.background = 'rgba(102, 126, 234, 0.1)';
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            fileInput.files = files;
+            displayFileInfo(files[0]);
+            previewRuleContent(files[0]);
+        }
+    });
+
+    // Click to upload - only trigger if clicking on the drop zone itself, not on buttons inside it
+    dropZone.addEventListener('click', function(e) {
+        // Don't trigger if clicking on a button or input element
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.closest('button')) {
+            return;
+        }
+        fileInput.click();
+    });
+
+    function displayFileInfo(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = `(${formatFileSize(file.size)})`;
+        fileInfo.classList.remove('d-none');
+        uploadBtn.disabled = false;
+        
+        // Add file icon based on type
+        const icon = getFileIcon(file.name);
+        fileName.innerHTML = `<i class="${icon} me-2"></i>${file.name}`;
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        if (ext === 'yar' || ext === 'yara') {
+            return 'fas fa-file-code';
+        }
+        return 'fas fa-file';
+    }
+
+    function previewRuleContent(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            ruleContent.textContent = content;
+            rulePreview.classList.remove('d-none');
+            noFileSelected.classList.add('d-none');
+        };
+        reader.readAsText(file);
+    }
+
+    // Form submission
+    uploadForm.addEventListener('submit', function(e) {
+        if (!fileInput.files[0]) {
+            e.preventDefault();
+            alert('Please select a YARA rule file to upload.');
+            return;
+        }
+        
+        // Show loading state
+        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
+        uploadBtn.disabled = true;
+    });
+});
+</script>
+{% endblock %}
