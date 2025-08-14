@@ -8,7 +8,7 @@
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
-                <li class="breadcrumb-item"><a href="{{ url_for('yara_rules') }}">YARA Rules</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('list_yara_rules') }}">YARA Rules</a></li>
                 <li class="breadcrumb-item active">Upload Custom Rule</li>
             </ol>
         </nav>
@@ -71,7 +71,7 @@
                         <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn" disabled>
                             <i class="fas fa-upload me-2"></i>Upload YARA Rule
                         </button>
-                        <a href="{{ url_for('yara_rules') }}" class="btn btn-outline-secondary btn-lg ms-2">
+                        <a href="{{ url_for('list_yara_rules') }}" class="btn btn-outline-secondary btn-lg ms-2">
                             <i class="fas fa-list me-2"></i>View All Rules
                         </a>
                     </div>

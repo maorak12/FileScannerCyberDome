@@ -25,8 +25,13 @@
                     <i class="fas fa-plus me-2"></i>Upload Custom Rule
                 </a>
                 <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-success ms-2">
-                    <i class="fas fa-download me-2"></i>Download Rules
+                    <i class="fas fa-sync-alt me-2"></i>Update Submodule
                 </a>
+                <form action="{{ url_for('refresh_yara_cache') }}" method="post" class="d-inline ms-2">
+                    <button type="submit" class="btn btn-outline-warning" title="Refresh YARA cache">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -38,7 +43,7 @@
         <div class="card text-center">
             <div class="card-body">
                 <i class="fas fa-file-code fa-2x text-primary mb-2"></i>
-                <h4 class="text-primary">{{ rules|length }}</h4>
+                <h4 class="text-primary">{{ pagination.total_rules }}</h4>
                 <p class="text-muted mb-0">Total Rules</p>
             </div>
         </div>
@@ -47,9 +52,7 @@
         <div class="card text-center">
             <div class="card-body">
                 <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
-                <h4 class="text-success">
-                    {{ rules|selectattr('status', 'eq', 'valid')|list|length }}
-                </h4>
+                <h4 class="text-success">{{ cache_stats.valid_rules }}</h4>
                 <p class="text-muted mb-0">Valid Rules</p>
             </div>
         </div>
@@ -58,9 +61,7 @@
         <div class="card text-center">
             <div class="card-body">
                 <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
-                <h4 class="text-warning">
-                    {{ rules|selectattr('status', 'eq', 'invalid')|list|length }}
-                </h4>
+                <h4 class="text-warning">{{ cache_stats.invalid_rules }}</h4>
                 <p class="text-muted mb-0">Invalid Rules</p>
             </div>
         </div>
@@ -69,11 +70,25 @@
         <div class="card text-center">
             <div class="card-body">
                 <i class="fas fa-folder fa-2x text-info mb-2"></i>
-                <h4 class="text-info">
-                    {{ rules|map(attribute='folder')|unique|list|length }}
-                </h4>
-                <p class="text-muted mb-0">Rule Folders</p>
+                <h4 class="text-info">{{ cache_stats.compiled_rules }}</h4>
+                <p class="text-muted mb-0">Compiled Rules</p>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cache Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Cache Status:</strong> 
+            Showing {{ pagination.start_idx }}-{{ pagination.end_idx }} of {{ pagination.total_rules }} rules
+            {% if cache_stats.cache_enabled %}
+                <span class="badge bg-success ms-2">Cache Enabled</span>
+            {% else %}
+                <span class="badge bg-warning ms-2">Cache Disabled</span>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -82,15 +97,27 @@
 <div class="card">
     <div class="card-header">
         <div class="row align-items-center">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <h5 class="mb-0">YARA Rules Database</h5>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <div class="input-group">
                     <span class="input-group-text">
                         <i class="fas fa-search"></i>
                     </span>
                     <input type="text" class="form-control" id="searchInput" placeholder="Search rules...">
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="d-flex align-items-center justify-content-end">
+                    <label class="form-label me-2 mb-0">Show:</label>
+                    <select class="form-select form-select-sm" id="perPageSelect" style="width: auto;">
+                        {% for option in pagination.options %}
+                        <option value="{{ option }}" {% if option == pagination.per_page %}selected{% endif %}>
+                            {{ option }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
         </div>
@@ -140,15 +167,13 @@
                         </td>
                         <td>
                             <div class="btn-group" role="group">
-                                <button type="button" class="btn btn-sm btn-outline-primary" 
-                                        onclick="previewRule('{{ rule.name|e }}', '{{ rule.content|e }}', '{{ rule.folder }}')"
-                                        title="Preview rule">
+                                <button type="button" class="btn btn-sm btn-outline-primary rule-preview-btn" 
+                                        data-rule-name="{{ rule.name }}"
+                                        data-rule-content="{{ rule.content|e }}"
+                                        data-rule-folder="{{ rule.folder }}"
+                                        title="Click to preview rule">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <a href="{{ url_for('view_yara_rule', rule_path=rule.path) }}" 
-                                   class="btn btn-sm btn-outline-info" title="View full rule">
-                                    <i class="fas fa-external-link-alt"></i>
-                                </a>
                             </div>
                         </td>
                     </tr>
@@ -156,6 +181,61 @@
                 </tbody>
             </table>
         </div>
+        
+        <!-- Pagination -->
+        {% if pagination.total_pages > 1 %}
+        <nav aria-label="YARA rules pagination">
+            <ul class="pagination justify-content-center">
+                <!-- Previous page -->
+                {% if pagination.page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('list_yara_rules', page=pagination.page-1, per_page=pagination.per_page) }}">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="fas fa-chevron-left"></i> Previous</span>
+                </li>
+                {% endif %}
+                
+                <!-- Page numbers -->
+                {% for page_num in range(1, pagination.total_pages + 1) %}
+                    {% if page_num == pagination.page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_num }}</span>
+                    </li>
+                    {% elif page_num <= 3 or page_num > pagination.total_pages - 3 or (page_num >= pagination.page - 1 and page_num <= pagination.page + 1) %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('list_yara_rules', page=page_num, per_page=pagination.per_page) }}">{{ page_num }}</a>
+                    </li>
+                    {% elif page_num == 4 and pagination.page > 6 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% elif page_num == pagination.total_pages - 3 and pagination.page < pagination.total_pages - 5 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+                
+                <!-- Next page -->
+                {% if pagination.page < pagination.total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('list_yara_rules', page=pagination.page+1, per_page=pagination.per_page) }}">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">Next <i class="fas fa-chevron-right"></i></span>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        
         {% else %}
         <div class="text-center py-5">
             <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
@@ -166,7 +246,7 @@
                     <i class="fas fa-upload me-2"></i>Upload First Rule
                 </a>
                 <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-success">
-                    <i class="fas fa-download me-2"></i>Download Rules
+                    <i class="fas fa-sync-alt me-2"></i>Update Submodule
                 </a>
             </div>
         </div>
@@ -175,24 +255,26 @@
 </div>
 
 <!-- Rule Preview Modal -->
-<div class="modal fade" id="rulePreviewModal" tabindex="-1" aria-labelledby="rulePreviewModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="rulePreviewModalLabel">
-                    <i class="fas fa-file-code me-2"></i>Rule Preview
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<div id="rulePreviewModal" class="rule-preview-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title">
+                <i class="fas fa-file-code me-2"></i>
+                <span id="modalRuleName"></span>
+            </h5>
+            <div class="modal-header-right">
+                <span id="modalRuleFolder" class="badge bg-secondary me-3"></span>
+                <button type="button" class="btn-close" onclick="hideRulePreview()" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <span class="badge bg-secondary" id="modalRuleFolder"></span>
-                </div>
-                <pre id="modalRuleContent" class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;"></pre>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
+        </div>
+        <div class="modal-body">
+            <pre id="modalRuleContent" class="yara-syntax-highlighted"></pre>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideRulePreview()">
+                <i class="fas fa-times me-2"></i>Close
+            </button>
         </div>
     </div>
 </div>
@@ -205,6 +287,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const rulesTable = document.getElementById('rulesTable');
     const tbody = rulesTable.querySelector('tbody');
     const rows = tbody.querySelectorAll('tr');
+    const perPageSelect = document.getElementById('perPageSelect');
 
     // Search functionality
     searchInput.addEventListener('input', function() {
@@ -228,6 +311,27 @@ document.addEventListener('DOMContentLoaded', function() {
         header.style.cursor = 'pointer';
         header.addEventListener('click', () => {
             sortTable(index);
+        });
+    });
+
+    // Per page selection
+    perPageSelect.addEventListener('change', function() {
+        const newPerPage = this.value;
+        const currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('per_page', newPerPage);
+        currentUrl.searchParams.set('page', '1'); // Reset to first page
+        window.location.href = currentUrl.toString();
+    });
+
+    // Rule preview click functionality
+    const previewButtons = document.querySelectorAll('.rule-preview-btn');
+    previewButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const ruleName = this.dataset.ruleName;
+            const ruleContent = this.dataset.ruleContent;
+            const ruleFolder = this.dataset.ruleFolder;
+            
+            showRulePreview(ruleName, ruleContent, ruleFolder, this);
         });
     });
 });
@@ -256,13 +360,88 @@ function sortTable(columnIndex) {
     rows.forEach(row => tbody.appendChild(row));
 }
 
-function previewRule(ruleName, ruleContent, folder) {
-    document.getElementById('modalRuleContent').textContent = ruleContent;
-    document.getElementById('modalRuleFolder').textContent = folder;
-    document.getElementById('rulePreviewModalLabel').innerHTML = `<i class="fas fa-file-code me-2"></i>${ruleName}`;
+function showRulePreview(ruleName, ruleContent, ruleFolder, buttonElement) {
+    const modal = document.getElementById('rulePreviewModal');
+    const modalRuleName = document.getElementById('modalRuleName');
+    const modalRuleFolder = document.getElementById('modalRuleFolder');
+    const modalRuleContent = document.getElementById('modalRuleContent');
     
-    const modal = new bootstrap.Modal(document.getElementById('rulePreviewModal'));
-    modal.show();
+    // Set content
+    modalRuleName.textContent = ruleName;
+    modalRuleFolder.textContent = ruleFolder;
+    modalRuleContent.textContent = ruleContent;
+    
+    // Apply syntax highlighting
+    applyYaraSyntaxHighlighting(modalRuleContent);
+    
+    // Show modal using CSS class
+    modal.classList.add('show');
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
 }
+
+function hideRulePreview() {
+    const modal = document.getElementById('rulePreviewModal');
+    modal.classList.remove('show');
+    
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+function applyYaraSyntaxHighlighting(element) {
+    let content = element.textContent;
+    
+    // Highlight rule name
+    content = content.replace(/rule\s+(\w+)/g, '<span class="text-primary">rule $1</span>');
+    
+    // Highlight sections
+    content = content.replace(/(meta|strings|condition):/g, '<span class="text-warning">$1:</span>');
+    
+    // Highlight strings
+    content = content.replace(/\$(\w+)\s*=/g, '<span class="text-info">$$1</span> =');
+    
+    // Highlight hex values
+    content = content.replace(/\{([0-9A-Fa-f\s]+)\}/g, '<span class="text-success">{$1}</span>');
+    
+    // Highlight comments
+    content = content.replace(/(\/\/.*$)/gm, '<span class="text-muted">$1</span>');
+    
+    element.innerHTML = content;
+}
+
+// Hide modal when clicking on backdrop
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('rulePreviewModal');
+    if (e.target.classList.contains('modal-backdrop')) {
+        hideRulePreview();
+    }
+});
+
+// Additional click handler for better backdrop detection
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('rulePreviewModal');
+    if (modal.classList.contains('show') && e.target === modal) {
+        hideRulePreview();
+    }
+});
+
+// Enhanced backdrop click detection
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('rulePreviewModal');
+    const modalContent = modal.querySelector('.modal-content');
+    
+    if (modal.classList.contains('show') && 
+        (e.target === modal || e.target.classList.contains('modal-backdrop'))) {
+        hideRulePreview();
+    }
+});
+
+// Hide modal on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideRulePreview();
+    }
+});
 </script>
 {% endblock %}

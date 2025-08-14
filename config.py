@@ -15,12 +15,18 @@ class Config:
     # YARA Configuration
     YARA_FOLDER = os.environ.get('YARA_FOLDER') or './yara-rules'
     YARA_RULESET_FOLDERS = os.environ.get('YARA_RULESET_FOLDERS', '').split(',') if os.environ.get('YARA_RULESET_FOLDERS') else [
-        os.path.join(YARA_FOLDER, 'signature_base/yara'),
-        os.path.join(YARA_FOLDER, 'custom_rules'),
+        os.path.join(YARA_FOLDER, 'signature_base/yara'),  # Git submodule directory
+        os.path.join(YARA_FOLDER, 'custom_rules'),         # Local custom rules
         YARA_FOLDER
     ]
-    YARA_REPO_URL = os.environ.get('YARA_REPO_URL') or 'https://github.com/Neo23x0/signature-base/archive/refs/heads/master.zip'
+    # For Git submodule setup, use the actual repository URL
+    YARA_REPO_URL = os.environ.get('YARA_REPO_URL') or 'https://github.com/Neo23x0/signature-base.git'
+    YARA_SUBMODULE_PATH = os.environ.get('YARA_SUBMODULE_PATH') or os.path.join(YARA_FOLDER, 'signature_base')
     MIN_COMMON_RULES = int(os.environ.get('MIN_COMMON_RULES', 2))  # Minimum rules for similar file detection
+    
+    # Cache Configuration
+    YARA_CACHE_ENABLED = os.environ.get('YARA_CACHE_ENABLED', 'True').lower() == 'true'
+    YARA_CACHE_REFRESH_INTERVAL = int(os.environ.get('YARA_CACHE_REFRESH_INTERVAL', 300))  # 5 minutes
     
     # Database Configuration
     DATABASE_PATH = os.environ.get('DATABASE_PATH') or 'filescanner.db'
@@ -37,6 +43,7 @@ class Config:
     
     # UI Configuration
     ITEMS_PER_PAGE = int(os.environ.get('ITEMS_PER_PAGE', 50))
+    PAGINATION_OPTIONS = [10, 50, 100]  # Available pagination limits
     
     @staticmethod
     def init_app(app):
@@ -45,10 +52,12 @@ class Config:
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['YARA_FOLDER'], exist_ok=True)
         
-        # Create all YARA ruleset folders
-        for folder in app.config['YARA_RULESET_FOLDERS']:
-            if folder.strip():  # Skip empty strings
-                os.makedirs(folder.strip(), exist_ok=True)
+        # Create custom rules folder (this is the only one we create)
+        custom_rules_folder = os.path.join(app.config['YARA_FOLDER'], 'custom_rules')
+        os.makedirs(custom_rules_folder, exist_ok=True)
+        
+        # Note: Git submodule directories should be initialized separately
+        # The cache will read directly from these directories
 
 class DevelopmentConfig(Config):
     """Development configuration"""

@@ -11,6 +11,7 @@ import zipfile
 import tempfile
 import shutil
 from config import get_config
+from yara_cache import yara_cache
 
 def create_app(config_name=None):
     """Application factory pattern"""
@@ -74,52 +75,32 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def scan_file_with_yara(file_path):
-    """Scan a file with all available YARA rules"""
+    """Scan a file with all available YARA rules using cache"""
     matches = []
     
-    # First, count total YARA rules for progress tracking
-    total_rules = 0
-    yara_rules = {}
-    
-    # Compile all YARA rules from all configured folders
-    for folder in app.config['YARA_RULESET_FOLDERS']:
-        if folder.strip() and os.path.exists(folder.strip()):
-            for root, dirs, files in os.walk(folder.strip()):
-                for file in files:
-                    if file.endswith(('.yar', '.yara')):
-                        total_rules += 1
-                        try:
-                            rule_path = os.path.join(root, file)
-                            rule_name = os.path.splitext(file)[0]
-                            # Use folder name as prefix to avoid conflicts
-                            folder_name = os.path.basename(folder.strip())
-                            unique_rule_name = f"{folder_name}_{rule_name}"
-                            yara_rules[unique_rule_name] = yara.compile(rule_path)
-                        except Exception as e:
-                            print(f"Error compiling rule {file} from {folder}: {e}")
+    # Get compiled rules from cache
+    compiled_rules = yara_cache.get_compiled_rules()
+    total_rules = len(compiled_rules)
     
     # Scan the file with all rules
     rules_checked = 0
-    for rule_name, compiled_rule in yara_rules.items():
+    for rule_path, compiled_rule in compiled_rules.items():
         rules_checked += 1
         try:
             file_matches = compiled_rule.match(file_path)
             for match in file_matches:
-                # Extract original rule name and folder from unique name
-                if '_' in rule_name:
-                    folder_name, original_rule_name = rule_name.split('_', 1)
-                else:
-                    folder_name = "unknown"
-                    original_rule_name = rule_name
+                # Extract rule name and folder from path
+                rule_name = os.path.splitext(os.path.basename(rule_path))[0]
+                folder_name = os.path.basename(os.path.dirname(rule_path))
                 
                 matches.append({
-                    'rule_name': original_rule_name,
-                    'rule_file': f"{folder_name}/{original_rule_name}",
+                    'rule_name': rule_name,
+                    'rule_file': f"{folder_name}/{rule_name}",
                     'match_strings': str(match.strings) if match.strings else '',
                     'match_offset': match.offset if hasattr(match, 'offset') else 0
                 })
         except Exception as e:
-            print(f"Error scanning with rule {rule_name}: {e}")
+            print(f"Error scanning with rule {rule_path}: {e}")
     
     return matches, total_rules, rules_checked
 
@@ -304,14 +285,6 @@ def upload_yara_rule():
             # Read and validate the YARA rule content
             rule_content = file.read().decode('utf-8')
             
-            # Try to compile the rule to validate it
-            try:
-                compiled_rule = yara.compile(source=rule_content)
-                flash('YARA rule compiled successfully!', 'success')
-            except Exception as e:
-                flash(f'YARA rule compilation failed: {str(e)}', 'error')
-                return redirect(request.url)
-            
             # Save the rule to custom rules folder
             custom_rules_folder = os.path.join(app.config['YARA_FOLDER'], 'custom_rules')
             os.makedirs(custom_rules_folder, exist_ok=True)
@@ -328,7 +301,13 @@ def upload_yara_rule():
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(rule_content)
             
-            flash(f'YARA rule "{filename}" uploaded successfully!', 'success')
+            # Add to cache
+            folder_name = 'custom_rules'
+            if yara_cache.add_rule(file_path, rule_content, folder_name):
+                flash(f'YARA rule "{filename}" uploaded successfully and added to cache!', 'success')
+            else:
+                flash(f'YARA rule "{filename}" uploaded but failed to add to cache.', 'warning')
+            
             return redirect(url_for('upload_yara_rule'))
             
         except Exception as e:
@@ -339,59 +318,42 @@ def upload_yara_rule():
 
 @app.route('/yara_rules')
 def list_yara_rules():
-    """List all YARA rules loaded in the system"""
-    all_rules = []
+    """List all YARA rules loaded in the system with pagination"""
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
     
-    try:
-        # Scan all configured YARA folders
-        for folder in app.config['YARA_RULESET_FOLDERS']:
-            if folder.strip() and os.path.exists(folder.strip()):
-                folder_name = os.path.basename(folder.strip())
-                for root, dirs, files in os.walk(folder.strip()):
-                    for file in files:
-                        if file.endswith(('.yar', '.yara')):
-                            rule_path = os.path.join(root, file)
-                            try:
-                                # Try to read and compile the rule
-                                with open(rule_path, 'r', encoding='utf-8') as f:
-                                    rule_content = f.read()
-                                
-                                # Try to compile to validate
-                                try:
-                                    compiled_rule = yara.compile(source=rule_content)
-                                    status = 'valid'
-                                except Exception as e:
-                                    status = 'invalid'
-                                    rule_content = f"# Compilation Error: {str(e)}\n\n{rule_content}"
-                                
-                                all_rules.append({
-                                    'name': os.path.splitext(file)[0],
-                                    'filename': file,
-                                    'folder': folder_name,
-                                    'path': rule_path,
-                                    'content': rule_content,
-                                    'status': status,
-                                    'size': os.path.getsize(rule_path)
-                                })
-                            except Exception as e:
-                                all_rules.append({
-                                    'name': os.path.splitext(file)[0],
-                                    'filename': file,
-                                    'folder': folder_name,
-                                    'path': rule_path,
-                                    'content': f"# Error reading file: {str(e)}",
-                                    'status': 'error',
-                                    'size': 0
-                                })
-        
-        # Sort rules by folder and name
-        all_rules.sort(key=lambda x: (x['folder'], x['name']))
-        
-    except Exception as e:
-        flash(f'Error loading YARA rules: {str(e)}', 'error')
-        all_rules = []
+    # Validate per_page against allowed options
+    if per_page not in app.config['PAGINATION_OPTIONS']:
+        per_page = 50
     
-    return render_template('yara_rules.html', rules=all_rules)
+    # Get all rules from cache
+    all_rules = yara_cache.get_rules()
+    
+    # Calculate pagination
+    total_rules = len(all_rules)
+    total_pages = (total_rules + per_page - 1) // per_page
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    # Get rules for current page
+    paginated_rules = all_rules[start_idx:end_idx]
+    
+    # Get cache statistics
+    cache_stats = yara_cache.get_cache_stats()
+    
+    return render_template('yara_rules.html', 
+                         rules=paginated_rules,
+                         pagination={
+                             'page': page,
+                             'per_page': per_page,
+                             'total_pages': total_pages,
+                             'total_rules': total_rules,
+                             'start_idx': start_idx + 1,
+                             'end_idx': min(end_idx, total_rules),
+                             'options': app.config['PAGINATION_OPTIONS']
+                         },
+                         cache_stats=cache_stats)
 
 @app.route('/yara_rule/<path:rule_path>')
 def view_yara_rule(rule_path):
@@ -412,21 +374,17 @@ def view_yara_rule(rule_path):
             flash('Invalid rule path', 'error')
             return redirect(url_for('list_yara_rules'))
         
-        if not os.path.exists(decoded_path):
-            flash('Rule file not found', 'error')
+        # Get rule from cache
+        rule_info = yara_cache.get_rule_by_path(decoded_path)
+        
+        if not rule_info:
+            flash('Rule not found in cache', 'error')
             return redirect(url_for('list_yara_rules'))
         
-        # Read the rule content
-        with open(decoded_path, 'r', encoding='utf-8') as f:
-            rule_content = f.read()
-        
-        rule_name = os.path.basename(decoded_path)
-        folder_name = os.path.basename(os.path.dirname(decoded_path))
-        
         return render_template('view_yara_rule.html', 
-                             rule_name=rule_name,
-                             folder_name=folder_name,
-                             rule_content=rule_content,
+                             rule_name=rule_info['name'],
+                             folder_name=rule_info['folder'],
+                             rule_content=rule_info['content'],
                              rule_path=decoded_path)
         
     except Exception as e:
@@ -457,14 +415,9 @@ def get_scan_progress(file_id):
         
         file_size = os.path.getsize(file_path)
         
-        # Count total YARA rules
-        total_rules = 0
-        for folder in app.config['YARA_RULESET_FOLDERS']:
-            if folder.strip() and os.path.exists(folder.strip()):
-                for root, dirs, files in os.walk(folder.strip()):
-                    for file in files:
-                        if file.endswith(('.yar', '.yara')):
-                            total_rules += 1
+        # Get total rules from cache
+        cache_stats = yara_cache.get_cache_stats()
+        total_rules = cache_stats['total_rules']
         
         return jsonify({
             'file_id': file_id,
@@ -474,6 +427,26 @@ def get_scan_progress(file_id):
             'status': 'ready'
         })
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/yara_cache/refresh', methods=['POST'])
+def refresh_yara_cache():
+    """Manually refresh the YARA cache"""
+    try:
+        yara_cache.get_rules(force_refresh=True)
+        flash('YARA cache refreshed successfully!', 'success')
+    except Exception as e:
+        flash(f'Error refreshing YARA cache: {str(e)}', 'error')
+    
+    return redirect(url_for('list_yara_rules'))
+
+@app.route('/yara_cache/stats')
+def get_cache_stats():
+    """Get YARA cache statistics"""
+    try:
+        stats = yara_cache.get_cache_stats()
+        return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -521,41 +494,55 @@ def delete_file(file_id):
 
 @app.route('/download_yara_rules')
 def download_yara_rules():
-    """Download and extract YARA rules from Neo23x0 signature-base"""
+    """Initialize or update YARA rules from Git submodule"""
     try:
-        # Download the repository
-        url = app.config['YARA_REPO_URL']
-        response = requests.get(url)
+        import subprocess
+        import sys
         
-        if response.status_code == 200:
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
-                tmp_file.write(response.content)
-                tmp_file_path = tmp_file.name
-            
-            # Extract YARA rules
-            with zipfile.ZipFile(tmp_file_path, 'r') as zip_ref:
-                for file_info in zip_ref.filelist:
-                    if file_info.filename.endswith(('.yar', '.yara')):
-                        # Extract to the first YARA ruleset folder (usually the main one)
-                        main_yara_folder = app.config['YARA_RULESET_FOLDERS'][0] if app.config['YARA_RULESET_FOLDERS'] else app.config['YARA_FOLDER']
-                        zip_ref.extract(file_info, 'temp_extract')
-                        source_path = os.path.join('temp_extract', file_info.filename)
-                        target_path = os.path.join(main_yara_folder, os.path.basename(file_info.filename))
-                        
-                        if os.path.exists(source_path):
-                            shutil.move(source_path, target_path)
-            
-            # Cleanup
-            os.unlink(tmp_file_path)
-            shutil.rmtree('temp_extract', ignore_errors=True)
-            
-            flash('YARA rules downloaded and extracted successfully!')
+        yara_folder = app.config['YARA_FOLDER']
+        submodule_path = app.config['YARA_SUBMODULE_PATH']
+        repo_url = app.config['YARA_REPO_URL']
+        
+        # Check if submodule directory exists
+        if not os.path.exists(submodule_path):
+            # Initialize submodule if it doesn't exist
+            try:
+                # Change to the yara-rules directory
+                os.chdir(yara_folder)
+                
+                # Initialize and update submodule
+                subprocess.run(['git', 'submodule', 'add', repo_url, 'signature_base'], 
+                             check=True, capture_output=True, text=True)
+                subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'], 
+                             check=True, capture_output=True, text=True)
+                
+                flash('YARA rules submodule initialized successfully!')
+                
+            except subprocess.CalledProcessError as e:
+                flash(f'Error initializing submodule: {e.stderr}')
+                return redirect(url_for('index'))
+                
         else:
-            flash('Failed to download YARA rules')
+            # Update existing submodule
+            try:
+                os.chdir(submodule_path)
+                subprocess.run(['git', 'pull', 'origin', 'master'], 
+                             check=True, capture_output=True, text=True)
+                flash('YARA rules submodule updated successfully!')
+                
+            except subprocess.CalledProcessError as e:
+                flash(f'Error updating submodule: {e.stderr}')
+                return redirect(url_for('index'))
+        
+        # Refresh the cache after updating
+        try:
+            yara_cache.get_rules(force_refresh=True)
+            flash('YARA cache refreshed with updated rules!')
+        except Exception as e:
+            flash(f'Warning: Cache refresh failed: {str(e)}')
             
     except Exception as e:
-        flash(f'Error downloading YARA rules: {str(e)}')
+        flash(f'Error managing YARA rules submodule: {str(e)}')
     
     return redirect(url_for('index'))
 
@@ -572,6 +559,17 @@ def not_found(e):
 
 if __name__ == '__main__':
     init_db()
+    
+    # Pre-load YARA cache for better performance
+    print("Initializing YARA cache...")
+    try:
+        yara_cache.get_rules(force_refresh=True)
+        cache_stats = yara_cache.get_cache_stats()
+        print(f"YARA cache initialized: {cache_stats['total_rules']} rules loaded ({cache_stats['valid_rules']} valid, {cache_stats['invalid_rules']} invalid)")
+    except Exception as e:
+        print(f"Warning: Failed to initialize YARA cache: {e}")
+    
+    print(f"Starting File Scanner CyberDome on {app.config['HOST']}:{app.config['PORT']}")
     app.run(
         host=app.config['HOST'],
         port=app.config['PORT'],

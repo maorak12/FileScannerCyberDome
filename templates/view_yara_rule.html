@@ -8,7 +8,7 @@
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
-                <li class="breadcrumb-item"><a href="{{ url_for('yara_rules') }}">YARA Rules</a></li>
+                <li class="breadcrumb-item"><a href="{{ list_url_for('yara_rules') }}">YARA Rules</a></li>
                 <li class="breadcrumb-item active">{{ rule_name }}</li>
             </ol>
         </nav>
@@ -52,7 +52,7 @@
                     <button class="btn btn-outline-secondary" onclick="downloadRule()">
                         <i class="fas fa-download me-2"></i>Download Rule
                     </button>
-                    <a href="{{ url_for('yara_rules') }}" class="btn btn-outline-info">
+                    <a href="{{ url_for('list_yara_rules') }}" class="btn btn-outline-info">
                         <i class="fas fa-arrow-left me-2"></i>Back to Rules
                     </a>
                 </div>
