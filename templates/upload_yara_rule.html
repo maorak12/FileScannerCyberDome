@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Custom YARA Rule - File Scanner CyberDome{% endblock %}
+{% block title %}Upload Custom YARA Rule - Cyberdome Sentinel{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -59,7 +59,7 @@
                             <strong>Rule Preview</strong>
                         </label>
                         <div id="rulePreview" class="d-none">
-                            <pre id="ruleContent" class="bg-dark text-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"></pre>
+                            <pre id="ruleContent" class="yara-syntax-highlighted p-3 rounded" style="background: rgba(26, 26, 46, 0.9); border: 1px solid var(--cyber-primary); max-height: 300px; overflow-y: auto; color: var(--cyber-text);"></pre>
                         </div>
                         <div id="noFileSelected" class="text-center py-4 text-muted">
                             <i class="fas fa-file-code fa-2x mb-2"></i>
@@ -112,16 +112,18 @@
                 
                 <div class="mt-3">
                     <h6><i class="fas fa-code me-2"></i>Example Rule</h6>
-                    <pre class="bg-light p-2 rounded small"><code>rule ExampleRule
+                    <pre class="yara-syntax-highlighted p-3 rounded" style="background: rgba(26, 26, 46, 0.9); border: 1px solid var(--cyber-primary); max-height: 300px; overflow-y: auto;"><code>rule ExampleRule
 {
     meta:
-        description = "Example YARA rule"
-        author = "Your Name"
+        description = "Example YARA rule for malware detection"
+        author = "Cyberdome Sentinel"
         date = "2024-01-01"
+        threat_level = "medium"
     
     strings:
         $string1 = "example string"
         $string2 = { 65 78 61 6D 70 6C 65 }
+        $hex_pattern = { 48 65 6C 6C 6F 20 57 6F 72 6C 64 }
     
     condition:
         any of them
@@ -146,6 +148,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const rulePreview = document.getElementById('rulePreview');
     const ruleContent = document.getElementById('ruleContent');
     const noFileSelected = document.getElementById('noFileSelected');
+    
+    // Apply syntax highlighting to the example rule
+    const exampleRule = document.querySelector('.yara-syntax-highlighted code');
+    if (exampleRule) {
+        applyYaraSyntaxHighlighting(exampleRule);
+    }
 
     // File input change
     fileInput.addEventListener('change', function(e) {
@@ -159,20 +167,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Drag and drop functionality
     dropZone.addEventListener('dragover', function(e) {
         e.preventDefault();
-        dropZone.style.borderColor = '#764ba2';
-        dropZone.style.background = 'rgba(118, 75, 162, 0.1)';
+        dropZone.style.borderColor = 'var(--cyber-accent)';
+        dropZone.style.background = 'rgba(255, 46, 99, 0.1)';
     });
 
     dropZone.addEventListener('dragleave', function(e) {
         e.preventDefault();
-        dropZone.style.borderColor = '#667eea';
-        dropZone.style.background = 'rgba(102, 126, 234, 0.1)';
+        dropZone.style.borderColor = 'var(--cyber-primary)';
+        dropZone.style.background = 'rgba(0, 212, 255, 0.05)';
     });
 
     dropZone.addEventListener('drop', function(e) {
         e.preventDefault();
-        dropZone.style.borderColor = '#667eea';
-        dropZone.style.background = 'rgba(102, 126, 234, 0.1)';
+        dropZone.style.borderColor = 'var(--cyber-primary)';
+        dropZone.style.background = 'rgba(0, 212, 255, 0.05)';
         
         const files = e.dataTransfer.files;
         if (files.length > 0) {
@@ -223,10 +231,38 @@ document.addEventListener('DOMContentLoaded', function() {
         reader.onload = function(e) {
             const content = e.target.result;
             ruleContent.textContent = content;
+            applyYaraSyntaxHighlighting(ruleContent);
             rulePreview.classList.remove('d-none');
             noFileSelected.classList.add('d-none');
         };
         reader.readAsText(file);
+    }
+    
+    function applyYaraSyntaxHighlighting(element) {
+        let content = element.textContent;
+        
+        // Highlight rule name
+        content = content.replace(/rule\s+(\w+)/g, '<span class="text-primary">rule $1</span>');
+        
+        // Highlight sections
+        content = content.replace(/(meta|strings|condition):/g, '<span class="text-warning">$1:</span>');
+        
+        // Highlight strings
+        content = content.replace(/\$(\w+)\s*=/g, '<span class="text-info">$$1</span> =');
+        
+        // Highlight hex values
+        content = content.replace(/\{([0-9A-Fa-f\s]+)\}/g, '<span class="text-success">{$1}</span>');
+        
+        // Highlight comments
+        content = content.replace(/(\/\/.*$)/gm, '<span class="text-muted">$1</span>');
+        
+        // Highlight operators
+        content = content.replace(/\b(any|all|none|of|them|and|or|not)\b/g, '<span class="text-danger">$1</span>');
+        
+        // Highlight numbers
+        content = content.replace(/\b(\d+)\b/g, '<span class="text-warning">$1</span>');
+        
+        element.innerHTML = content;
     }
 
     // Form submission

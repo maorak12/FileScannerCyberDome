@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}All Scanned Files - File Scanner CyberDome{% endblock %}
+{% block title %}All Scanned Files - Cyberdome Sentinel{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -32,7 +32,7 @@
             <div class="card-body">
                 <i class="fas fa-shield-virus fa-2x text-danger mb-2"></i>
                 <h4 class="text-danger">
-                    {{ files|selectattr('6', 'gt', 0)|list|length }}
+                    {{ files|selectattr('7', 'gt', 0)|list|length }}
                 </h4>
                 <p class="text-muted mb-0">Files with Matches</p>
             </div>
@@ -43,7 +43,7 @@
             <div class="card-body">
                 <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
                 <h4 class="text-success">
-                    {{ files|selectattr('6', 'eq', 0)|list|length }}
+                    {{ files|selectattr('7', 'eq', 0)|list|length }}
                 </h4>
                 <p class="text-muted mb-0">Clean Files</p>
             </div>
@@ -54,7 +54,7 @@
             <div class="card-body">
                 <i class="fas fa-database fa-2x text-info mb-2"></i>
                 <h4 class="text-info">
-                    {% set total_matches = files|sum(attribute='6') %}
+                    {% set total_matches = files|sum(attribute='7') %}
                     {{ total_matches }}
                 </h4>
                 <p class="text-muted mb-0">Total Matches</p>
@@ -97,7 +97,7 @@
                 </thead>
                 <tbody>
                     {% for file in files %}
-                    <tr class="{% if file[6] > 0 %}table-danger{% else %}table-success{% endif %}">
+                    <tr class="{% if file[7] > 0 %}table-danger{% else %}table-success{% endif %}">
                         <td>
                             <div class="d-flex align-items-center">
                                 <i class="fas fa-file-code text-primary me-2"></i>
@@ -118,14 +118,14 @@
                             <small>{{ file[4] }}</small>
                         </td>
                         <td>
-                            {% if file[6] > 0 %}
-                                <span class="badge bg-danger">{{ file[6] }} matches</span>
+                            {% if file[7] > 0 %}
+                                <span class="badge bg-danger">{{ file[7] }} matches</span>
                             {% else %}
                                 <span class="badge bg-success">Clean</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if file[6] > 0 %}
+                            {% if file[7] > 0 %}
                                 <span class="badge bg-danger">
                                     <i class="fas fa-exclamation-triangle me-1"></i>SUSPICIOUS
                                 </span>

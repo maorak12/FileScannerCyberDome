@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 import os
 import sqlite3
 import hashlib
@@ -42,7 +42,8 @@ def init_db():
             file_hash TEXT UNIQUE NOT NULL,
             file_size INTEGER,
             upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            file_path TEXT
+            file_path TEXT,
+            description TEXT
         )
     ''')
     
@@ -57,6 +58,14 @@ def init_db():
             FOREIGN KEY (executable_id) REFERENCES executables (id)
         )
     ''')
+    
+    # Add description column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute('ALTER TABLE executables ADD COLUMN description TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
     
     conn.commit()
     conn.close()
@@ -151,6 +160,80 @@ def find_similar_files(executable_id, min_common_rules=None):
     conn.close()
     return similar_files
 
+def rescan_all_files_with_new_rule(rule_path, rule_filename, folder_name):
+    """Re-scan all existing files with a newly uploaded YARA rule"""
+    try:
+        # Get the compiled rule
+        compiled_rules = yara_cache.get_compiled_rules()
+        if rule_path not in compiled_rules:
+            print(f"Warning: Rule {rule_filename} not found in compiled rules")
+            flash(f'Warning: Rule {rule_filename} not found in compiled rules', 'warning')
+            return
+        
+        compiled_rule = compiled_rules[rule_path]
+        rule_name = os.path.splitext(rule_filename)[0]
+        
+        print(f"Re-scanning with rule: {rule_name} from {rule_path}")
+        
+        # Get all existing files
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, file_path FROM executables')
+        files = cursor.fetchall()
+        
+        print(f"Found {len(files)} existing files to re-scan")
+        
+        new_matches_count = 0
+        files_scanned = 0
+        
+        for file_id, file_path in files:
+            if os.path.exists(file_path):
+                try:
+                    files_scanned += 1
+                    # Scan the file with the new rule
+                    matches = compiled_rule.match(file_path)
+                    
+                    print(f"File {file_id}: {os.path.basename(file_path)} - Found {len(matches)} matches")
+                    
+                    for match in matches:
+                        # Check if this match already exists
+                        cursor.execute('''
+                            SELECT id FROM yara_matches 
+                            WHERE executable_id = ? AND rule_name = ?
+                        ''', (file_id, rule_name))
+                        
+                        existing_match = cursor.fetchone()
+                        
+                        if not existing_match:
+                            # Add new match
+                            cursor.execute('''
+                                INSERT INTO yara_matches (executable_id, rule_name, rule_file, match_strings, match_offset)
+                                VALUES (?, ?, ?, ?, ?)
+                            ''', (file_id, rule_name, f"{folder_name}/{rule_name}", 
+                                  str(match.strings) if match.strings else '', 
+                                  match.offset if hasattr(match, 'offset') else 0))
+                            new_matches_count += 1
+                            print(f"  -> Added new match for file {file_id}")
+                        else:
+                            print(f"  -> Match already exists for file {file_id}")
+                
+                except Exception as e:
+                    print(f"Error scanning file {file_path} with rule {rule_filename}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"Re-scan complete: {files_scanned} files scanned, {new_matches_count} new matches found")
+        
+        if new_matches_count > 0:
+            flash(f'Re-scanned all files with new rule "{rule_name}". Found {new_matches_count} additional matches.', 'success')
+        else:
+            flash(f'Re-scanned all files with new rule "{rule_name}". No additional matches found.', 'info')
+            
+    except Exception as e:
+        print(f"Error during file re-scan: {e}")
+        flash(f'Warning: Error during file re-scan: {str(e)}', 'warning')
+
 @app.route('/')
 def index():
     """Main page with file upload form"""
@@ -173,6 +256,9 @@ def upload_file():
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
         
+        # Get description from form
+        description = request.form.get('description', '').strip()
+        
         # Calculate file hash
         file_hash = get_file_hash(file_path)
         file_size = os.path.getsize(file_path)
@@ -190,9 +276,9 @@ def upload_file():
         
         # Insert file into database
         cursor.execute('''
-            INSERT INTO executables (filename, file_hash, file_size, file_path)
-            VALUES (?, ?, ?, ?)
-        ''', (filename, file_hash, file_size, file_path))
+            INSERT INTO executables (filename, file_hash, file_size, file_path, description)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (filename, file_hash, file_size, file_path, description))
         
         executable_id = cursor.lastrowid
         
@@ -245,6 +331,30 @@ def file_details(file_id):
                          yara_matches=yara_matches,
                          similar_files=similar_files)
 
+@app.route('/file/<int:file_id>/update_description', methods=['POST'])
+def update_file_description(file_id):
+    """Update file description"""
+    try:
+        description = request.form.get('description', '').strip()
+        
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        cursor = conn.cursor()
+        
+        # Update the description
+        cursor.execute('UPDATE executables SET description = ? WHERE id = ?', (description, file_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Description updated successfully'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/files')
 def list_files():
     """List all uploaded files"""
@@ -252,10 +362,10 @@ def list_files():
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT e.*, COUNT(ym.id) as yara_count
+        SELECT e.id, e.filename, e.file_hash, e.file_size, e.upload_date, e.file_path, e.description, COUNT(ym.id) as yara_count
         FROM executables e
         LEFT JOIN yara_matches ym ON e.id = ym.executable_id
-        GROUP BY e.id
+        GROUP BY e.id, e.filename, e.file_hash, e.file_size, e.upload_date, e.file_path, e.description
         ORDER BY e.upload_date DESC
     ''')
     
@@ -305,6 +415,17 @@ def upload_yara_rule():
             folder_name = 'custom_rules'
             if yara_cache.add_rule(file_path, rule_content, folder_name):
                 flash(f'YARA rule "{filename}" uploaded successfully and added to cache!', 'success')
+                
+                # Force cache refresh to ensure the new rule is available
+                yara_cache.get_rules(force_refresh=True)
+                
+                # Small delay to ensure cache is fully updated
+                import time
+                time.sleep(0.5)
+                
+                # Re-scan all existing files with the new rule
+                rescan_all_files_with_new_rule(file_path, filename, folder_name)
+                
             else:
                 flash(f'YARA rule "{filename}" uploaded but failed to add to cache.', 'warning')
             
@@ -450,6 +571,70 @@ def get_cache_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/yara_rule/<path:rule_path>/delete', methods=['POST'])
+def delete_yara_rule(rule_path):
+    """Delete a YARA rule from the filesystem and cache"""
+    try:
+        # Decode the URL-encoded path
+        decoded_path = request.view_args['rule_path']
+        
+        # Security check: ensure the path is within YARA folders
+        is_valid_path = False
+        for folder in app.config['YARA_RULESET_FOLDERS']:
+            if folder.strip() and os.path.exists(folder.strip()):
+                if decoded_path.startswith(folder.strip()):
+                    is_valid_path = True
+                    break
+        
+        if not is_valid_path:
+            return jsonify({'success': False, 'error': 'Invalid rule path'}), 400
+        
+        # Check if file exists
+        if not os.path.exists(decoded_path):
+            return jsonify({'success': False, 'error': 'Rule file not found'}), 404
+        
+        # Get rule info before deletion
+        rule_info = yara_cache.get_rule_by_path(decoded_path)
+        if not rule_info:
+            return jsonify({'success': False, 'error': 'Rule not found in cache'}), 404
+        
+        rule_name = rule_info['name']
+        rule_filename = rule_info['filename']
+        
+        # Check if this is a submodule rule (should not be deleted)
+        if rule_info.get('is_submodule', False):
+            return jsonify({'success': False, 'error': 'Cannot delete submodule rules. Only custom rules can be deleted.'}), 403
+        
+        # Remove from cache first
+        if not yara_cache.remove_rule(decoded_path):
+            return jsonify({'success': False, 'error': 'Failed to remove rule from cache'}), 500
+        
+        # Delete the physical file
+        try:
+            os.remove(decoded_path)
+        except OSError as e:
+            # If file deletion fails, try to re-add to cache
+            yara_cache.add_rule(decoded_path, rule_info['content'], rule_info['folder'])
+            return jsonify({'success': False, 'error': f'Failed to delete file: {str(e)}'}), 500
+        
+        # Remove any YARA matches from database that reference this rule
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        cursor = conn.cursor()
+        
+        # Delete matches for this rule
+        cursor.execute('DELETE FROM yara_matches WHERE rule_file LIKE ?', (f"%{rule_name}",))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'YARA rule "{rule_filename}" deleted successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/file/<int:file_id>/delete', methods=['POST'])
 def delete_file(file_id):
     """Delete a file from the database and filesystem"""
@@ -494,57 +679,65 @@ def delete_file(file_id):
 
 @app.route('/download_yara_rules')
 def download_yara_rules():
-    """Initialize or update YARA rules from Git submodule"""
+    """Download all YARA rules as a compressed ZIP file"""
     try:
-        import subprocess
-        import sys
+        import zipfile
+        import tempfile
+        from io import BytesIO
         
         yara_folder = app.config['YARA_FOLDER']
-        submodule_path = app.config['YARA_SUBMODULE_PATH']
-        repo_url = app.config['YARA_REPO_URL']
         
-        # Check if submodule directory exists
-        if not os.path.exists(submodule_path):
-            # Initialize submodule if it doesn't exist
-            try:
-                # Change to the yara-rules directory
-                os.chdir(yara_folder)
-                
-                # Initialize and update submodule
-                subprocess.run(['git', 'submodule', 'add', repo_url, 'signature_base'], 
-                             check=True, capture_output=True, text=True)
-                subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'], 
-                             check=True, capture_output=True, text=True)
-                
-                flash('YARA rules submodule initialized successfully!')
-                
-            except subprocess.CalledProcessError as e:
-                flash(f'Error initializing submodule: {e.stderr}')
-                return redirect(url_for('index'))
-                
-        else:
-            # Update existing submodule
-            try:
-                os.chdir(submodule_path)
-                subprocess.run(['git', 'pull', 'origin', 'master'], 
-                             check=True, capture_output=True, text=True)
-                flash('YARA rules submodule updated successfully!')
-                
-            except subprocess.CalledProcessError as e:
-                flash(f'Error updating submodule: {e.stderr}')
-                return redirect(url_for('index'))
+        if not os.path.exists(yara_folder):
+            flash('YARA rules folder not found', 'error')
+            return redirect(url_for('index'))
         
-        # Refresh the cache after updating
-        try:
-            yara_cache.get_rules(force_refresh=True)
-            flash('YARA cache refreshed with updated rules!')
-        except Exception as e:
-            flash(f'Warning: Cache refresh failed: {str(e)}')
-            
+        # Create a temporary file for the ZIP
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        temp_zip.close()
+        
+        # Create ZIP file
+        with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Walk through the yara-rules directory
+            for root, dirs, files in os.walk(yara_folder):
+                # Skip .git directories
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                
+                for file in files:
+                    if file.endswith(('.yar', '.yara')):
+                        file_path = os.path.join(root, file)
+                        
+                        # Calculate relative path from yara-rules folder
+                        rel_path = os.path.relpath(file_path, yara_folder)
+                        
+                        # Add file to ZIP with relative path
+                        zipf.write(file_path, rel_path)
+        
+        # Read the ZIP file content
+        with open(temp_zip.name, 'rb') as f:
+            zip_content = f.read()
+        
+        # Clean up temporary file
+        os.unlink(temp_zip.name)
+        
+        # Create response with ZIP file
+        response = BytesIO(zip_content)
+        response.seek(0)
+        
+        # Get current timestamp for filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'yara_rules_{timestamp}.zip'
+        
+        return send_file(
+            response,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename
+        )
+        
     except Exception as e:
-        flash(f'Error managing YARA rules submodule: {str(e)}')
-    
-    return redirect(url_for('index'))
+        flash(f'Error creating YARA rules archive: {str(e)}', 'error')
+        return redirect(url_for('index'))
 
 @app.errorhandler(413)
 def too_large(e):
@@ -569,7 +762,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Warning: Failed to initialize YARA cache: {e}")
     
-    print(f"Starting File Scanner CyberDome on {app.config['HOST']}:{app.config['PORT']}")
+    print(f"Starting Cyberdome Sentinel on {app.config['HOST']}:{app.config['PORT']}")
     app.run(
         host=app.config['HOST'],
         port=app.config['PORT'],

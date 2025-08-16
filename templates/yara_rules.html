@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}YARA Rules - File Scanner CyberDome{% endblock %}
+{% block title %}YARA Rules - Cyberdome Sentinel{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -24,8 +24,9 @@
                 <a href="{{ url_for('upload_yara_rule') }}" class="btn btn-primary">
                     <i class="fas fa-plus me-2"></i>Upload Custom Rule
                 </a>
-                <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-success ms-2">
-                    <i class="fas fa-sync-alt me-2"></i>Update Submodule
+                <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-success ms-2" 
+                   title="Download all YARA rules as a ZIP file with folder structure preserved">
+                    <i class="fas fa-download me-2"></i>Download All Rules (ZIP)
                 </a>
                 <form action="{{ url_for('refresh_yara_cache') }}" method="post" class="d-inline ms-2">
                     <button type="submit" class="btn btn-outline-warning" title="Refresh YARA cache">
@@ -174,6 +175,15 @@
                                         title="Click to preview rule">
                                     <i class="fas fa-eye"></i>
                                 </button>
+                                {% if not rule.is_submodule %}
+                                <button type="button" class="btn btn-sm btn-outline-danger delete-rule-btn" 
+                                        data-rule-path="{{ rule.path|e }}"
+                                        data-rule-name="{{ rule.name }}"
+                                        data-rule-filename="{{ rule.filename }}"
+                                        title="Delete rule">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -246,7 +256,7 @@
                     <i class="fas fa-upload me-2"></i>Upload First Rule
                 </a>
                 <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-success">
-                    <i class="fas fa-sync-alt me-2"></i>Update Submodule
+                    <i class="fas fa-download me-2"></i>Download All Rules (ZIP)
                 </a>
             </div>
         </div>
@@ -274,6 +284,32 @@
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="hideRulePreview()">
                 <i class="fas fa-times me-2"></i>Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteConfirmModal" class="rule-preview-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 500px; height: auto;">
+        <div class="modal-header">
+            <h5 class="modal-title">
+                <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                Delete YARA Rule
+            </h5>
+            <button type="button" class="btn-close" onclick="hideDeleteConfirmation()" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete the YARA rule <strong id="deleteRuleName"></strong>?</p>
+            <p class="text-muted">This action cannot be undone. The rule will be permanently removed from the filesystem and all related matches will be deleted from the database.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideDeleteConfirmation()">
+                <i class="fas fa-times me-2"></i>Cancel
+            </button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                <i class="fas fa-trash me-2"></i>Delete Rule
             </button>
         </div>
     </div>
@@ -332,6 +368,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const ruleFolder = this.dataset.ruleFolder;
             
             showRulePreview(ruleName, ruleContent, ruleFolder, this);
+        });
+    });
+
+    // Rule delete click functionality
+    const deleteButtons = document.querySelectorAll('.delete-rule-btn');
+    deleteButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const rulePath = this.dataset.rulePath;
+            const ruleName = this.dataset.ruleName;
+            const ruleFilename = this.dataset.ruleFilename;
+            
+            showDeleteConfirmation(rulePath, ruleName, ruleFilename, this);
         });
     });
 });
@@ -441,6 +489,175 @@ document.addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         hideRulePreview();
+    }
+});
+
+// Delete confirmation functionality
+let currentDeleteRulePath = null;
+let currentDeleteButton = null;
+
+function showDeleteConfirmation(rulePath, ruleName, ruleFilename, buttonElement) {
+    currentDeleteRulePath = rulePath;
+    currentDeleteButton = buttonElement;
+    
+    document.getElementById('deleteRuleName').textContent = ruleFilename;
+    
+    const modal = document.getElementById('deleteConfirmModal');
+    modal.classList.add('show');
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+function hideDeleteConfirmation() {
+    const modal = document.getElementById('deleteConfirmModal');
+    modal.classList.remove('show');
+    
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+// Handle delete confirmation
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    if (!currentDeleteRulePath) return;
+    
+    const button = this;
+    const originalText = button.innerHTML;
+    
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Deleting...';
+    
+    // Make AJAX request to delete the rule
+    fetch(`/yara_rule/${encodeURIComponent(currentDeleteRulePath)}/delete`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showAlert('success', data.message);
+            
+            // Remove the row from the table
+            if (currentDeleteButton) {
+                const row = currentDeleteButton.closest('tr');
+                if (row) {
+                    row.remove();
+                    
+                    // Update pagination counts
+                    updatePaginationCounts();
+                }
+            }
+            
+            // Close the modal
+            hideDeleteConfirmation();
+            
+        } else {
+            // Show error message
+            showAlert('danger', `Error: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'An error occurred while deleting the rule.');
+    })
+    .finally(() => {
+        // Reset button state
+        button.disabled = false;
+        button.innerHTML = originalText;
+        
+        // Clear current delete state
+        currentDeleteRulePath = null;
+        currentDeleteButton = null;
+    });
+});
+
+function showAlert(type, message) {
+    // Create alert element
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Insert at the top of the content area
+    const contentArea = document.querySelector('.row:first-of-type');
+    contentArea.parentNode.insertBefore(alertDiv, contentArea);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+
+function updatePaginationCounts() {
+    // Update the total rules count in the statistics cards
+    const totalRulesCard = document.querySelector('.card.text-center h4.text-primary');
+    if (totalRulesCard) {
+        const currentCount = parseInt(totalRulesCard.textContent);
+        totalRulesCard.textContent = currentCount - 1;
+    }
+    
+    // Update the cache status text
+    const cacheStatus = document.querySelector('.alert-info');
+    if (cacheStatus) {
+        const text = cacheStatus.textContent;
+        const match = text.match(/Showing (\d+)-(\d+) of (\d+) rules/);
+        if (match) {
+            const start = parseInt(match[1]);
+            const end = parseInt(match[2]);
+            const total = parseInt(match[3]) - 1;
+            
+            if (end > total) {
+                // If we're on the last page and it's now empty, redirect to previous page
+                const currentUrl = new URL(window.location);
+                const currentPage = parseInt(currentUrl.searchParams.get('page') || '1');
+                if (currentPage > 1) {
+                    currentUrl.searchParams.set('page', currentPage - 1);
+                    window.location.href = currentUrl.toString();
+                }
+            } else {
+                cacheStatus.innerHTML = cacheStatus.innerHTML.replace(
+                    /Showing \d+-\d+ of \d+ rules/,
+                    `Showing ${start}-${Math.min(end, total)} of ${total} rules`
+                );
+            }
+        }
+    }
+}
+
+// Hide modals when clicking on backdrop
+document.addEventListener('click', function(e) {
+    const rulePreviewModal = document.getElementById('rulePreviewModal');
+    const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+    
+    // Check if clicking on backdrop or modal container
+    if (e.target.classList.contains('modal-backdrop') || 
+        (e.target === rulePreviewModal && rulePreviewModal.classList.contains('show'))) {
+        hideRulePreview();
+    } else if (e.target.classList.contains('modal-backdrop') || 
+               (e.target === deleteConfirmModal && deleteConfirmModal.classList.contains('show'))) {
+        hideDeleteConfirmation();
+    }
+});
+
+// Hide modals on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const rulePreviewModal = document.getElementById('rulePreviewModal');
+        const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+        
+        if (rulePreviewModal.classList.contains('show')) {
+            hideRulePreview();
+        } else if (deleteConfirmModal.classList.contains('show')) {
+            hideDeleteConfirmation();
+        }
     }
 });
 </script>

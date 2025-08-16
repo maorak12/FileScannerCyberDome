@@ -1,13 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}File Scanner CyberDome - Home{% endblock %}
+{% block title %}Cyberdome Sentinel - Home{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-lg-8 mx-auto text-center">
         <h1 class="display-4 mb-4">
-            <i class="fas fa-shield-alt text-primary me-3"></i>
-            File Scanner CyberDome
+            <div class="text-center mb-4">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" width="120" height="120" class="mb-3 d-block mx-auto main-logo">
+            </div>
+            <div class="text-center">
+                Cyberdome Sentinel
+            </div>
         </h1>
         <p class="lead mb-5">
             Advanced malware detection using YARA rules. Upload executable files to scan for malicious patterns 
@@ -40,6 +44,20 @@
                             <i class="fas fa-file me-2"></i>
                             <span id="fileName"></span>
                             <span id="fileSize" class="ms-2"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">
+                            <i class="fas fa-comment me-2"></i>File Description (Optional)
+                        </label>
+                        <textarea class="form-control" id="description" name="description" rows="3" 
+                                  placeholder="Enter a description for this file (e.g., source, purpose, notes...)"
+                                  maxlength="500"></textarea>
+                        <div class="form-text">
+                            <small class="text-muted">
+                                <span id="charCount">0</span>/500 characters
+                            </small>
                         </div>
                     </div>
                     
@@ -124,7 +142,7 @@
             <i class="fas fa-plus me-2"></i>Upload Custom Rule
         </a>
         <a href="{{ url_for('download_yara_rules') }}" class="btn btn-outline-info ms-2">
-            <i class="fas fa-download me-2"></i>Download YARA Rules
+            <i class="fas fa-download me-2"></i>Download All Rules (ZIP)
         </a>
     </div>
 </div>
@@ -217,6 +235,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return iconMap[ext] || 'fas fa-file';
     }
 
+    // Character counter for description
+    const descriptionTextarea = document.getElementById('description');
+    const charCount = document.getElementById('charCount');
+    
+    descriptionTextarea.addEventListener('input', function() {
+        const currentLength = this.value.length;
+        charCount.textContent = currentLength;
+        
+        if (currentLength > 450) {
+            charCount.style.color = '#dc3545';
+        } else if (currentLength > 400) {
+            charCount.style.color = '#ffc107';
+        } else {
+            charCount.style.color = '#6c757d';
+        }
+    });
+    
     // Form submission
     uploadForm.addEventListener('submit', function(e) {
         if (!fileInput.files[0]) {

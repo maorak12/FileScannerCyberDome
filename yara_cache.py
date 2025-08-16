@@ -37,36 +37,42 @@ class YaraCache:
         return self._rules_cache.copy()
     
     def _refresh_cache(self):
-        """Refresh the YARA rules cache by reading directly from submodule directories"""
+        """Refresh the YARA rules cache by reading directly from YARA directories"""
         all_rules = []
         self._cache_errors = []
         
         try:
-            logger.info("Refreshing YARA rules cache from submodule directories...")
+            logger.info("Refreshing YARA rules cache from YARA directories...")
             
             # Scan all configured YARA folders
             for folder in self.config.YARA_RULESET_FOLDERS:
                 if folder.strip() and os.path.exists(folder.strip()):
-                    folder_name = os.path.basename(folder.strip())
-                    logger.info(f"Scanning submodule folder: {folder_name}")
+                    folder_path = folder.strip()
+                    folder_name = os.path.basename(folder_path)
+                    logger.info(f"Scanning YARA folder: {folder_path}")
                     
                     # Check if this is a Git submodule directory
-                    git_dir = os.path.join(folder.strip(), '.git')
+                    git_dir = os.path.join(folder_path, '.git')
                     is_submodule = os.path.exists(git_dir) or os.path.islink(git_dir)
                     
                     if is_submodule:
                         logger.info(f"Detected Git submodule: {folder_name}")
                     
-                    for root, dirs, files in os.walk(folder.strip()):
+                    # Count files found
+                    yara_files_found = 0
+                    
+                    for root, dirs, files in os.walk(folder_path):
                         # Skip .git directories
                         if '.git' in dirs:
                             dirs.remove('.git')
                         
                         for file in files:
                             if file.endswith(('.yar', '.yara')):
+                                yara_files_found += 1
                                 rule_path = os.path.join(root, file)
+                                logger.debug(f"Found YARA file: {rule_path}")
                                 try:
-                                    # Read rule content directly from submodule directory
+                                    # Read rule content directly from YARA directory
                                     with open(rule_path, 'r', encoding='utf-8') as f:
                                         rule_content = f.read()
                                     
@@ -86,37 +92,49 @@ class YaraCache:
                                     rel_path = os.path.relpath(rule_path, folder.strip())
                                     display_folder = f"{folder_name}/{os.path.dirname(rel_path)}" if os.path.dirname(rel_path) else folder_name
                                     
-                                    all_rules.append({
-                                        'name': os.path.splitext(file)[0],
-                                        'filename': file,
-                                        'folder': display_folder,
-                                        'path': rule_path,
-                                        'content': rule_content,
-                                        'status': status,
-                                        'size': os.path.getsize(rule_path),
-                                        'is_submodule': is_submodule
-                                    })
+                                    # Check for duplicates based on path
+                                    existing_rule = next((r for r in all_rules if r['path'] == rule_path), None)
+                                    if not existing_rule:
+                                        all_rules.append({
+                                            'name': os.path.splitext(file)[0],
+                                            'filename': file,
+                                            'folder': display_folder,
+                                            'path': rule_path,
+                                            'content': rule_content,
+                                            'status': status,
+                                            'size': os.path.getsize(rule_path),
+                                            'is_submodule': is_submodule
+                                        })
+                                    else:
+                                        logger.debug(f"Skipping duplicate rule: {rule_path}")
                                 except Exception as e:
                                     error_msg = f"Error reading file {file}: {str(e)}"
                                     logger.error(error_msg)
                                     self._cache_errors.append(error_msg)
                                     
-                                    all_rules.append({
-                                        'name': os.path.splitext(file)[0],
-                                        'filename': file,
-                                        'folder': folder_name,
-                                        'path': rule_path,
-                                        'content': f"# Error reading file: {str(e)}",
-                                        'status': 'error',
-                                        'size': 0,
-                                        'is_submodule': is_submodule
-                                    })
+                                    # Check for duplicates based on path
+                                    existing_rule = next((r for r in all_rules if r['path'] == rule_path), None)
+                                    if not existing_rule:
+                                        all_rules.append({
+                                            'name': os.path.splitext(file)[0],
+                                            'filename': file,
+                                            'folder': folder_name,
+                                            'path': rule_path,
+                                            'content': f"# Error reading file: {str(e)}",
+                                            'status': 'error',
+                                            'size': 0,
+                                            'is_submodule': is_submodule
+                                        })
+                                    else:
+                                        logger.debug(f"Skipping duplicate rule: {rule_path}")
+                    
+                    logger.info(f"Found {yara_files_found} YARA files in folder: {folder_path}")
             
             # Sort rules by folder and name
             all_rules.sort(key=lambda x: (x['folder'], x['name']))
             self._rules_cache = all_rules
             
-            logger.info(f"Cache refresh complete: {len(all_rules)} rules loaded from submodule directories")
+            logger.info(f"Cache refresh complete: {len(all_rules)} rules loaded from YARA directories")
             
         except Exception as e:
             error_msg = f"Error refreshing YARA cache: {str(e)}"
@@ -137,18 +155,24 @@ class YaraCache:
             status = 'valid'
             self._compiled_rules[rule_path] = compiled_rule
             
-            # Add to cache
-            rule_info = {
-                'name': os.path.splitext(os.path.basename(rule_path))[0],
-                'filename': os.path.basename(rule_path),
-                'folder': folder_name,
-                'path': rule_path,
-                'content': rule_content,
-                'status': status,
-                'size': len(rule_content.encode('utf-8'))
-            }
-            
+            # Check for duplicates before adding
             with self._cache_lock:
+                existing_rule = next((r for r in self._rules_cache if r['path'] == rule_path), None)
+                if existing_rule:
+                    logger.warning(f"Rule already exists in cache: {rule_path}")
+                    return False
+                
+                # Add to cache
+                rule_info = {
+                    'name': os.path.splitext(os.path.basename(rule_path))[0],
+                    'filename': os.path.basename(rule_path),
+                    'folder': folder_name,
+                    'path': rule_path,
+                    'content': rule_content,
+                    'status': status,
+                    'size': len(rule_content.encode('utf-8'))
+                }
+                
                 self._rules_cache.append(rule_info)
                 self._rules_cache.sort(key=lambda x: (x['folder'], x['name']))
             

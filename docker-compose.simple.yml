@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  cyberdome-sentinel:
+    build: .
+    container_name: cyberdome-sentinel
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - HOST=0.0.0.0
+      - PORT=5000
+      - DEBUG=false
+      - DATABASE_PATH=/app/data/filescanner.db
+      - UPLOAD_FOLDER=/app/uploads
+      - YARA_FOLDER=/app/yara-rules
+      - MAX_CONTENT_LENGTH=104857600
+      - MIN_COMMON_RULES=2
+      - PAGINATION_OPTIONS=25,50,100,200
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./yara-rules:/app/yara-rules
+      - ./static:/app/static
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

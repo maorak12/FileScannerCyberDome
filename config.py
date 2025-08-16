@@ -15,9 +15,7 @@ class Config:
     # YARA Configuration
     YARA_FOLDER = os.environ.get('YARA_FOLDER') or './yara-rules'
     YARA_RULESET_FOLDERS = os.environ.get('YARA_RULESET_FOLDERS', '').split(',') if os.environ.get('YARA_RULESET_FOLDERS') else [
-        os.path.join(YARA_FOLDER, 'signature_base/yara'),  # Git submodule directory
-        os.path.join(YARA_FOLDER, 'custom_rules'),         # Local custom rules
-        YARA_FOLDER
+        YARA_FOLDER  # Scan the entire yara-rules folder and all subfolders
     ]
     # For Git submodule setup, use the actual repository URL
     YARA_REPO_URL = os.environ.get('YARA_REPO_URL') or 'https://github.com/Neo23x0/signature-base.git'
@@ -52,13 +50,11 @@ class Config:
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['YARA_FOLDER'], exist_ok=True)
         
-        # Create custom rules folder (this is the only one we create)
+        # Create custom rules folder
         custom_rules_folder = os.path.join(app.config['YARA_FOLDER'], 'custom_rules')
         os.makedirs(custom_rules_folder, exist_ok=True)
         
-        # Note: Git submodule directories should be initialized separately
-        # The cache will read directly from these directories
-
+       
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
