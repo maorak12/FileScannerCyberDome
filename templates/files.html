@@ -64,7 +64,7 @@
 </div>
 
 <!-- Files Table -->
-<div class="card">
+<div class="card animate-slide-left">
     <div class="card-header">
         <div class="row align-items-center">
             <div class="col-md-6">
@@ -97,7 +97,7 @@
                 </thead>
                 <tbody>
                     {% for file in files %}
-                    <tr class="{% if file[7] > 0 %}table-danger{% else %}table-success{% endif %}">
+                    <tr class="{% if file[7] > 0 %}table-danger{% else %}table-success{% endif %}" data-file-id="{{ file[0] }}">
                         <td>
                             <div class="d-flex align-items-center">
                                 <i class="fas fa-file-code text-primary me-2"></i>
@@ -105,7 +105,7 @@
                             </div>
                         </td>
                         <td>
-                            <code class="text-break" title="{{ file[2] }}">
+                            <code class="text-break clickable-hash" title="Click to copy full hash" onclick="copyHashToClipboard('{{ file[2] }}')" style="cursor: pointer;">
                                 {{ file[2][:16] }}...
                             </code>
                         </td>
@@ -222,6 +222,15 @@
     border-top-right-radius: 0.375rem;
     border-bottom-right-radius: 0.375rem;
 }
+
+/* Clickable hash styling */
+.clickable-hash {
+    transition: color 0.2s ease;
+}
+
+.clickable-hash:hover {
+    color: var(--cyber-primary) !important;
+}
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -262,6 +271,14 @@ document.addEventListener('DOMContentLoaded', function() {
         header.addEventListener('click', () => {
             sortTable(index);
         });
+    });
+    
+    // Close modal when clicking backdrop
+    const deleteModal = document.getElementById('deleteFileModal');
+    deleteModal.addEventListener('click', function(e) {
+        if (e.target === deleteModal) {
+            hideDeleteModal();
+        }
     });
 });
 
@@ -340,44 +357,78 @@ function exportToJSON() {
 }
 
 function deleteFile(fileId, filename) {
-    if (confirm(`Are you sure you want to delete "${filename}"?\n\nThis action cannot be undone and will remove the file from both the database and filesystem.`)) {
-        // Show loading state
-        const deleteBtn = document.querySelector(`[data-file-id="${fileId}"]`);
-        const originalContent = deleteBtn.innerHTML;
-        deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        deleteBtn.disabled = true;
-        
-        fetch(`/file/${fileId}/delete`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+    // Show the delete modal instead of using confirm()
+    document.getElementById('deleteFileName').textContent = filename;
+    document.getElementById('deleteFileId').value = fileId; // Set the hidden input value
+    
+    // Reset the delete button to its original state
+    const deleteBtn = document.getElementById('confirmDeleteFileBtn');
+    deleteBtn.innerHTML = '<i class="fas fa-trash me-2"></i>Delete File';
+    deleteBtn.disabled = false;
+    
+    document.getElementById('deleteFileModal').classList.add('show');
+}
+
+function hideDeleteModal() {
+    document.getElementById('deleteFileModal').classList.remove('show');
+}
+
+function confirmDeleteFile() {
+    const fileId = document.getElementById('deleteFileId').value;
+    const filename = document.getElementById('deleteFileName').textContent;
+    
+    // Get fresh button reference each time
+    const deleteBtn = document.getElementById('confirmDeleteFileBtn');
+    const originalContent = deleteBtn.innerHTML;
+    
+    // Show loading state
+    deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Deleting...';
+    deleteBtn.disabled = true;
+    
+    fetch(`/file/${fileId}/delete`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Remove the row from the table
+            const row = document.querySelector(`[data-file-id="${fileId}"]`).closest('tr');
+            row.style.animation = 'fadeOut 0.5s ease-out';
+            setTimeout(() => {
+                row.remove();
+                // Update statistics
+                updateStatistics();
+                // Show success message
+                showNotification(data.message, 'success');
+                // Hide modal
+                hideDeleteModal();
+                // Restore button state after successful deletion
+                deleteBtn.innerHTML = originalContent;
+                deleteBtn.disabled = false;
+            }, 500);
+        } else {
+            throw new Error(data.error || 'Failed to delete file');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification(`Error deleting file: ${error.message}`, 'error');
+        // Restore button state
+        deleteBtn.innerHTML = originalContent;
+        deleteBtn.disabled = false;
+    })
+    .finally(() => {
+        // Ensure button state is always restored, even if there are unexpected issues
+        setTimeout(() => {
+            if (deleteBtn.disabled) {
+                deleteBtn.innerHTML = originalContent;
+                deleteBtn.disabled = false;
             }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Remove the row from the table
-                const row = deleteBtn.closest('tr');
-                row.style.animation = 'fadeOut 0.5s ease-out';
-                setTimeout(() => {
-                    row.remove();
-                    // Update statistics
-                    updateStatistics();
-                    // Show success message
-                    showNotification(data.message, 'success');
-                }, 500);
-            } else {
-                throw new Error(data.error || 'Failed to delete file');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification(`Error deleting file: ${error.message}`, 'error');
-            // Restore button state
-            deleteBtn.innerHTML = originalContent;
-            deleteBtn.disabled = false;
-        });
-    }
+        }, 2000);
+    });
 }
 
 function updateStatistics() {
@@ -427,5 +478,42 @@ function downloadFile(content, filename, contentType) {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
 }
+
+function copyHashToClipboard(hash) {
+    const textArea = document.createElement('textarea');
+    textArea.value = hash;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    showNotification('Hash copied to clipboard!', 'success');
+}
 </script>
+
+<!-- Delete File Confirmation Modal -->
+<div id="deleteFileModal" class="rule-preview-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 500px; height: auto;">
+        <div class="modal-header">
+            <h5 class="modal-title">
+                <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                Delete File
+            </h5>
+            <button type="button" class="btn-close" onclick="hideDeleteModal()" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete the file <strong id="deleteFileName"></strong>?</p>
+            <p class="text-muted">This action cannot be undone. The file will be permanently removed from both the database and filesystem.</p>
+            <input type="hidden" id="deleteFileId" value="">
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideDeleteModal()">
+                <i class="fas fa-times me-2"></i>Cancel
+            </button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteFileBtn" onclick="confirmDeleteFile()">
+                <i class="fas fa-trash me-2"></i>Delete File
+            </button>
+        </div>
+    </div>
+</div>
 {% endblock %} 

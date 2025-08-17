@@ -84,7 +84,7 @@
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
             <strong>Cache Status:</strong> 
-            Showing {{ pagination.start_idx }}-{{ pagination.end_idx }} of {{ pagination.total_rules }} rules
+            Showing {{ pagination.total_rules }} rules
             {% if cache_stats.cache_enabled %}
                 <span class="badge bg-success ms-2">Cache Enabled</span>
             {% else %}
@@ -95,7 +95,7 @@
 </div>
 
 <!-- Rules Table -->
-<div class="card">
+<div class="card animate-slide-left" style="animation-delay: 0.1s;">
     <div class="card-header">
         <div class="row align-items-center">
             <div class="col-md-4">
@@ -193,58 +193,11 @@
         </div>
         
         <!-- Pagination -->
-        {% if pagination.total_pages > 1 %}
         <nav aria-label="YARA rules pagination">
             <ul class="pagination justify-content-center">
-                <!-- Previous page -->
-                {% if pagination.page > 1 %}
-                <li class="page-item">
-                    <a class="page-link" href="{{ url_for('list_yara_rules', page=pagination.page-1, per_page=pagination.per_page) }}">
-                        <i class="fas fa-chevron-left"></i> Previous
-                    </a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link"><i class="fas fa-chevron-left"></i> Previous</span>
-                </li>
-                {% endif %}
-                
-                <!-- Page numbers -->
-                {% for page_num in range(1, pagination.total_pages + 1) %}
-                    {% if page_num == pagination.page %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ page_num }}</span>
-                    </li>
-                    {% elif page_num <= 3 or page_num > pagination.total_pages - 3 or (page_num >= pagination.page - 1 and page_num <= pagination.page + 1) %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('list_yara_rules', page=page_num, per_page=pagination.per_page) }}">{{ page_num }}</a>
-                    </li>
-                    {% elif page_num == 4 and pagination.page > 6 %}
-                    <li class="page-item disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                    {% elif page_num == pagination.total_pages - 3 and pagination.page < pagination.total_pages - 5 %}
-                    <li class="page-item disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-                
-                <!-- Next page -->
-                {% if pagination.page < pagination.total_pages %}
-                <li class="page-item">
-                    <a class="page-link" href="{{ url_for('list_yara_rules', page=pagination.page+1, per_page=pagination.per_page) }}">
-                        Next <i class="fas fa-chevron-right"></i>
-                    </a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link">Next <i class="fas fa-chevron-right"></i></span>
-                </li>
-                {% endif %}
+                <!-- Pagination will be populated by JavaScript -->
             </ul>
         </nav>
-        {% endif %}
         
         {% else %}
         <div class="text-center py-5">
@@ -317,30 +270,268 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* Enhanced search and pagination styling */
+#searchInput {
+    transition: all 0.3s ease;
+}
+
+#searchInput:focus {
+    box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.3);
+    border-color: var(--cyber-primary);
+}
+
+.pagination {
+    margin-top: 1rem;
+}
+
+.pagination .page-link {
+    color: var(--cyber-primary);
+    border-color: var(--cyber-primary);
+    background: rgba(26, 26, 46, 0.8);
+    transition: all 0.3s ease;
+}
+
+.pagination .page-link:hover {
+    background: var(--cyber-primary);
+    color: var(--cyber-dark);
+    border-color: var(--cyber-primary);
+    transform: translateY(-1px);
+}
+
+.pagination .page-item.active .page-link {
+    background: var(--cyber-primary);
+    border-color: var(--cyber-primary);
+    color: var(--cyber-dark);
+}
+
+.pagination .page-item.disabled .page-link {
+    color: var(--cyber-text-secondary);
+    border-color: var(--cyber-text-secondary);
+    background: rgba(26, 26, 46, 0.4);
+}
+
+/* Smooth transitions for table rows */
+#rulesTable tbody tr {
+    transition: all 0.3s ease;
+}
+
+/* Enhanced table header styling */
+#rulesTable thead th {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#rulesTable thead th:hover {
+    background: rgba(0, 212, 255, 0.2);
+    color: var(--cyber-primary);
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.getElementById('searchInput');
     const rulesTable = document.getElementById('rulesTable');
     const tbody = rulesTable.querySelector('tbody');
-    const rows = tbody.querySelectorAll('tr');
     const perPageSelect = document.getElementById('perPageSelect');
-
-    // Search functionality
+    
+    // Store all rules data for search functionality
+    let allRulesData = [];
+    
+    // Initialize all rules data from the table
+    function initializeAllRulesData() {
+        allRulesData = [];
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(row => {
+            const ruleName = row.cells[0].textContent.trim();
+            const folder = row.cells[1].textContent.trim();
+            const size = row.cells[2].textContent.trim();
+            const status = row.cells[3].textContent.trim();
+            const actions = row.cells[4].innerHTML;
+            
+            allRulesData.push({
+                element: row,
+                ruleName: ruleName,
+                folder: folder,
+                size: size,
+                status: status,
+                actions: actions,
+                visible: true
+            });
+        });
+    }
+    
+    // Initialize the data
+    initializeAllRulesData();
+    
+    // Initialize the display
+    updateDisplayAfterSearch();
+    
+    // Search functionality - search through ALL rules
     searchInput.addEventListener('input', function() {
         const searchTerm = this.value.toLowerCase();
         
-        rows.forEach(row => {
-            const ruleName = row.cells[0].textContent.toLowerCase();
-            const folder = row.cells[1].textContent.toLowerCase();
-            
-            if (ruleName.includes(searchTerm) || folder.includes(searchTerm)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
+        if (searchTerm === '') {
+            // Show all rules
+            allRulesData.forEach(rule => {
+                rule.element.style.display = '';
+                rule.visible = true;
+            });
+        } else {
+            // Filter rules based on search term
+            allRulesData.forEach(rule => {
+                const matches = rule.ruleName.toLowerCase().includes(searchTerm) || 
+                              rule.folder.toLowerCase().includes(searchTerm);
+                
+                rule.element.style.display = matches ? '' : 'none';
+                rule.visible = matches;
+            });
+        }
+        
+        // Update pagination and display based on search results
+        updateDisplayAfterSearch();
+    });
+    
+    // Update display after search
+    function updateDisplayAfterSearch() {
+        const visibleRules = allRulesData.filter(rule => rule.visible);
+        const totalVisible = visibleRules.length;
+        const currentPerPage = parseInt(perPageSelect.value);
+        const totalPages = Math.ceil(totalVisible / currentPerPage);
+        
+        // Update cache status display
+        updateCacheStatusDisplay(totalVisible, totalPages);
+        
+        // Show only first page of results
+        showPage(1, visibleRules, currentPerPage);
+        
+        // Update pagination
+        updatePagination(totalPages, 1);
+    }
+    
+    // Show specific page of results
+    function showPage(pageNum, rules, perPage) {
+        const startIdx = (pageNum - 1) * perPage;
+        const endIdx = startIdx + perPage;
+        const pageRules = rules.slice(startIdx, endIdx);
+        
+        // Hide all rules first
+        allRulesData.forEach(rule => {
+            if (rule.visible) {
+                rule.element.style.display = 'none';
             }
         });
-    });
-
+        
+        // Show only rules for current page
+        pageRules.forEach(rule => {
+            rule.element.style.display = '';
+        });
+        
+        // Update cache status to show current page info
+        const totalVisible = rules.length;
+        updateCacheStatusDisplay(totalVisible, Math.ceil(totalVisible / perPage), pageNum, perPage);
+    }
+    
+    // Update cache status display
+    function updateCacheStatusDisplay(totalVisible, totalPages, currentPage = 1, perPage = 50) {
+        const cacheStatus = document.querySelector('.alert-info');
+        if (cacheStatus) {
+            const start = (currentPage - 1) * perPage + 1;
+            const end = Math.min(currentPage * perPage, totalVisible);
+            
+            let statusText = `Showing ${start}-${end} of ${totalVisible} rules`;
+            if (totalPages > 1) {
+                statusText += ` (Page ${currentPage} of ${totalPages})`;
+            }
+            
+            // Update the text while preserving the badges
+            const badges = cacheStatus.querySelectorAll('.badge');
+            cacheStatus.innerHTML = `
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Cache Status:</strong> ${statusText}
+                ${Array.from(badges).map(badge => badge.outerHTML).join('')}
+            `;
+        }
+    }
+    
+    // Update pagination controls
+    function updatePagination(totalPages, currentPage) {
+        const paginationContainer = document.querySelector('.pagination');
+        if (!paginationContainer) return;
+        
+        if (totalPages <= 1) {
+            paginationContainer.style.display = 'none';
+            return;
+        }
+        
+        paginationContainer.style.display = 'flex';
+        
+        // Clear existing pagination
+        const paginationList = paginationContainer.querySelector('ul');
+        if (paginationList) {
+            paginationList.innerHTML = '';
+        }
+        
+        // Create pagination HTML
+        let paginationHTML = '';
+        
+        // Previous button
+        if (currentPage > 1) {
+            paginationHTML += `
+                <li class="page-item">
+                    <a class="page-link" href="#" onclick="goToPage(${currentPage - 1})">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                </li>
+            `;
+        }
+        
+        // Page numbers
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                paginationHTML += `
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="goToPage(${i})">${i}</a>
+                    </li>
+                `;
+            } else if (i === currentPage - 2 || i === currentPage + 2) {
+                paginationHTML += `
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                `;
+            }
+        }
+        
+        // Next button
+        if (currentPage < totalPages) {
+            paginationHTML += `
+                <li class="page-item">
+                    <a class="page-link" href="#" onclick="goToPage(${currentPage + 1})">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                </li>
+            `;
+        }
+        
+        if (paginationList) {
+            paginationList.innerHTML = paginationHTML;
+        }
+    }
+    
+    // Global function to go to specific page
+    window.goToPage = function(pageNum) {
+        const searchTerm = searchInput.value.toLowerCase();
+        const visibleRules = allRulesData.filter(rule => rule.visible);
+        const currentPerPage = parseInt(perPageSelect.value);
+        
+        showPage(pageNum, visibleRules, currentPerPage);
+        updatePagination(Math.ceil(visibleRules.length / currentPerPage), pageNum);
+        
+        // Scroll to top of table
+        rulesTable.scrollIntoView({ behavior: 'smooth' });
+    };
+    
     // Sort table by columns
     const headers = rulesTable.querySelectorAll('th');
     headers.forEach((header, index) => {
@@ -353,10 +544,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Per page selection
     perPageSelect.addEventListener('change', function() {
         const newPerPage = this.value;
-        const currentUrl = new URL(window.location);
-        currentUrl.searchParams.set('per_page', newPerPage);
-        currentUrl.searchParams.set('page', '1'); // Reset to first page
-        window.location.href = currentUrl.toString();
+        const searchTerm = searchInput.value.toLowerCase();
+        const visibleRules = allRulesData.filter(rule => rule.visible);
+        
+        // Reset to first page and update display
+        showPage(1, visibleRules, newPerPage);
+        updatePagination(Math.ceil(visibleRules.length / newPerPage), 1);
     });
 
     // Rule preview click functionality

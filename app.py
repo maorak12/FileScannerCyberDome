@@ -114,7 +114,59 @@ def scan_file_with_yara(file_path):
     return matches, total_rules, rules_checked
 
 def find_similar_files(executable_id, min_common_rules=None):
-    """Find files with similar YARA rule matches"""
+    """Find files with exactly the same set of YARA rule matches"""
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
+    cursor = conn.cursor()
+    
+    # Get current file's YARA matches
+    cursor.execute('''
+        SELECT rule_name FROM yara_matches 
+        WHERE executable_id = ?
+        ORDER BY rule_name
+    ''', (executable_id,))
+    current_rules = {row[0] for row in cursor.fetchall()}
+    
+    if not current_rules:
+        conn.close()
+        return []
+    
+    # Convert current rules to a sorted string for comparison
+    current_rules_str = ','.join(sorted(current_rules))
+    current_rules_count = len(current_rules)
+    
+    print(f"DEBUG: Looking for files with exactly {current_rules_count} rules: {current_rules_str}")
+    
+    # Find files with exactly the same set of YARA rule matches
+    cursor.execute('''
+        SELECT e.id, e.filename, e.file_hash, e.upload_date,
+               COUNT(ym.rule_name) as rule_count,
+               GROUP_CONCAT(ym.rule_name ORDER BY ym.rule_name) as rule_names
+        FROM executables e
+        JOIN yara_matches ym ON e.id = ym.executable_id
+        WHERE e.id != ?
+        GROUP BY e.id
+        HAVING rule_count = ? AND GROUP_CONCAT(ym.rule_name ORDER BY ym.rule_name) = ?
+        ORDER BY e.upload_date DESC
+    ''', (executable_id, current_rules_count, current_rules_str))
+    
+    similar_files = []
+    for row in cursor.fetchall():
+        similar_files.append({
+            'id': row[0],
+            'filename': row[1],
+            'file_hash': row[2],
+            'upload_date': row[3],
+            'common_rules': row[4],  # This will always equal current_rules_count
+            'rule_names': row[5].split(',') if row[5] else []
+        })
+    
+    print(f"DEBUG: Found {len(similar_files)} files with exact YARA rule matches")
+    
+    conn.close()
+    return similar_files
+
+def find_files_with_common_rules(executable_id, min_common_rules=None):
+    """Find files that share some YARA rules with the current file (for reference)"""
     if min_common_rules is None:
         min_common_rules = app.config['MIN_COMMON_RULES']
     
@@ -132,7 +184,7 @@ def find_similar_files(executable_id, min_common_rules=None):
         conn.close()
         return []
     
-    # Find files with similar rules
+    # Find files with some common rules (but not exact matches)
     cursor.execute('''
         SELECT e.id, e.filename, e.file_hash, e.upload_date,
                COUNT(ym.rule_name) as common_rules,
@@ -142,13 +194,13 @@ def find_similar_files(executable_id, min_common_rules=None):
         WHERE e.id != ? AND ym.rule_name IN ({})
         GROUP BY e.id
         HAVING common_rules >= ?
-        ORDER BY common_rules DESC
+        ORDER BY common_rules DESC, e.upload_date DESC
     '''.format(','.join(['?'] * len(current_rules)), min_common_rules), 
     (executable_id,) + tuple(current_rules) + (min_common_rules,))
     
-    similar_files = []
+    common_rule_files = []
     for row in cursor.fetchall():
-        similar_files.append({
+        common_rule_files.append({
             'id': row[0],
             'filename': row[1],
             'file_hash': row[2],
@@ -158,7 +210,7 @@ def find_similar_files(executable_id, min_common_rules=None):
         })
     
     conn.close()
-    return similar_files
+    return common_rule_files
 
 def rescan_all_files_with_new_rule(rule_path, rule_filename, folder_name):
     """Re-scan all existing files with a newly uploaded YARA rule"""
@@ -439,9 +491,8 @@ def upload_yara_rule():
 
 @app.route('/yara_rules')
 def list_yara_rules():
-    """List all YARA rules loaded in the system with pagination"""
-    # Get pagination parameters
-    page = request.args.get('page', 1, type=int)
+    """List all YARA rules loaded in the system with client-side pagination"""
+    # Get per_page parameter for initial display
     per_page = request.args.get('per_page', 50, type=int)
     
     # Validate per_page against allowed options
@@ -451,27 +502,14 @@ def list_yara_rules():
     # Get all rules from cache
     all_rules = yara_cache.get_rules()
     
-    # Calculate pagination
-    total_rules = len(all_rules)
-    total_pages = (total_rules + per_page - 1) // per_page
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    
-    # Get rules for current page
-    paginated_rules = all_rules[start_idx:end_idx]
-    
     # Get cache statistics
     cache_stats = yara_cache.get_cache_stats()
     
     return render_template('yara_rules.html', 
-                         rules=paginated_rules,
+                         rules=all_rules,  # Pass all rules for client-side pagination
                          pagination={
-                             'page': page,
                              'per_page': per_page,
-                             'total_pages': total_pages,
-                             'total_rules': total_rules,
-                             'start_idx': start_idx + 1,
-                             'end_idx': min(end_idx, total_rules),
+                             'total_rules': len(all_rules),
                              'options': app.config['PAGINATION_OPTIONS']
                          },
                          cache_stats=cache_stats)

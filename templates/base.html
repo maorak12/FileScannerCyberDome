@@ -697,32 +697,406 @@
         .navbar-brand .navbar-logo {
             margin-right: 0.5rem;
         }
-    
-    /* Delete Confirmation Modal Specific Styles */
-    #deleteConfirmModal .modal-content {
-        max-width: 500px !important;
-        height: auto !important;
-        max-height: 80vh !important;
-    }
         
-        #deleteConfirmModal .modal-body {
-            background: #ffffff !important;
-            color: #333333 !important;
-            border-left: none !important;
+        /* File Details Page Specific Styles */
+        .yara-match {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid var(--cyber-warning);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .yara-match:hover {
+            background: rgba(255, 193, 7, 0.15);
+            border-color: var(--cyber-accent);
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .similar-file {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--cyber-primary);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .similar-file:hover {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: var(--cyber-accent);
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        /* Progress Bar Improvements */
+        .progress {
+            background: rgba(26, 26, 46, 0.6);
+            border: 1px solid var(--cyber-primary);
+            border-radius: 10px;
+            height: 25px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(45deg, var(--cyber-primary), var(--cyber-accent));
+            border-radius: 8px;
+            transition: width 0.6s ease;
+            min-width: 2em;
+        }
+        
+        /* Enhanced Card Spacing */
+        .card {
+            margin-bottom: 1.5rem;
+        }
+        
+        .card:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* Better Border Separators */
+        .border-end {
+            border-right: 2px solid rgba(0, 212, 255, 0.2) !important;
+        }
+        
+        .border-end:last-child {
             border-right: none !important;
         }
         
+        /* Enhanced Badge Styling */
+        .badge {
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0.5em 0.75em;
+            border-radius: 6px;
+        }
+        
+        /* File Path Code Styling */
+        code {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 4px;
+            padding: 0.2em 0.4em;
+            font-size: 0.9em;
+            color: var(--cyber-primary);
+        }
+        
+        /* Enhanced Description Section */
+        .description-section {
+            background: rgba(0, 212, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .description-section h6 {
+            color: var(--cyber-primary);
+            margin-bottom: 1rem;
+        }
+        
+        /* Enhanced Table Styling */
+        .table-hover tbody tr {
+            transition: background-color 0.2s ease;
+            position: relative;
+        }
+        
+        .table-hover tbody tr:hover {
+            background: rgba(0, 212, 255, 0.1) !important;
+            transition: background-color 0.2s ease;
+        }
+        
+        /* Ensure table cells don't expand on hover */
+        .table td,
+        .table th {
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        
+        /* Allow text wrapping for specific columns if needed */
+        .table .text-break {
+            white-space: normal;
+            word-wrap: break-word;
+        }
+        
+        /* Enhanced Alert Styling */
+        .alert {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .alert-warning {
+            background: rgba(255, 193, 7, 0.15);
+            border-left: 4px solid var(--cyber-warning);
+            color: var(--cyber-warning);
+        }
+        
+        .alert-success {
+            background: rgba(0, 255, 136, 0.15);
+            border-left: 4px solid var(--cyber-success);
+            color: var(--cyber-success);
+        }
+        
+        .alert-info {
+            background: rgba(0, 212, 255, 0.15);
+            border-left: 4px solid var(--cyber-primary);
+            color: var(--cyber-primary);
+        }
+        
+        .alert-danger {
+            background: rgba(255, 71, 87, 0.15);
+            border-left: 4px solid var(--cyber-danger);
+            color: var(--cyber-danger);
+        }
+        
+        /* CSS Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+        
+        /* Animation Classes */
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        .animate-slide-left {
+            animation: slideInLeft 0.6s ease-out;
+        }
+        
+        .animate-slide-right {
+            animation: slideInRight 0.6s ease-out;
+        }
+        
+        .animate-pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        /* Enhanced Hover Effects */
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.25);
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Enhanced Focus States */
+        .form-control:focus,
+        .btn:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.3);
+        }
+        
+        /* Enhanced Loading States */
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        /* Enhanced Modal Animations */
+        .modal-content {
+            animation: modalFadeIn 0.3s ease-out;
+        }
+        
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Fix for hover scrollbar issues */
+        .card,
+        .btn,
+        .yara-match,
+        .similar-file {
+            overflow: hidden;
+        }
+        
+        /* Alternative hover effects that don't cause scrollbars */
+        .yara-match:hover,
+        .similar-file:hover {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: var(--cyber-accent);
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        /* Prevent scrollbar issues */
+        body {
+            overflow-x: hidden;
+        }
+        
+        .container {
+            overflow-x: hidden;
+        }
+        
+        .card-body {
+            overflow-x: hidden;
+        }
+        
+        /* Ensure tables don't cause horizontal scrollbars */
+        .table-responsive {
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+        
+        .table {
+            margin-bottom: 0;
+        }
+        
+        /* Specific fixes for files and YARA rules tables */
+        #filesTable,
+        #rulesTable {
+            width: 100%;
+            table-layout: fixed;
+        }
+        
+        #filesTable td,
+        #filesTable th,
+        #rulesTable td,
+        #rulesTable th {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 0;
+        }
+        
+        /* Allow specific columns to wrap if needed */
+        #filesTable .hash-column,
+        #rulesTable .rule-content-column {
+            white-space: normal;
+            word-wrap: break-word;
+        }
+        
+        /* Prevent table row expansion on hover */
+        .table tbody tr {
+            height: auto;
+            min-height: 0;
+        }
+        
+        .table tbody tr:hover {
+            height: auto;
+            min-height: 0;
+        }
+        
+        /* Fix for any remaining transform issues */
+        * {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        
+        /* Additional overflow prevention for table containers */
+        .card-body .table-responsive {
+            margin: 0;
+            padding: 0;
+        }
+        
+        .card-body .table {
+            margin: 0;
+            border: none;
+        }
+        
+        /* Ensure no horizontal overflow anywhere */
+        .row {
+            overflow-x: hidden;
+        }
+        
+        .col-12,
+        .col-lg-8,
+        .col-lg-4,
+        .col-md-3,
+        .col-md-6 {
+            overflow-x: hidden;
+        }
+        
+        /* Prevent any element from causing horizontal scroll */
+        .card,
+        .alert,
+        .btn-group,
+        .input-group {
+            overflow-x: hidden;
+        }
+        
+        /* Delete Confirmation Modal Specific Styles */
+        #deleteConfirmModal .modal-content {
+            max-width: 500px !important;
+            height: auto !important;
+            max-height: 80vh !important;
+            background: var(--cyber-secondary) !important;
+            border: 2px solid var(--cyber-primary) !important;
+            color: var(--cyber-text) !important;
+        }
+            
+        #deleteConfirmModal .modal-body {
+            background: var(--cyber-secondary) !important;
+            color: var(--cyber-text) !important;
+            border-left: none !important;
+            border-right: none !important;
+        }
+            
         #deleteConfirmModal .modal-header {
-            background: #f8f9fa !important;
-            color: #333333 !important;
-            border-bottom: 1px solid #dee2e6 !important;
+            background: rgba(0, 212, 255, 0.1) !important;
+            color: var(--cyber-primary) !important;
+            border-bottom: 1px solid var(--cyber-primary) !important;
         }
-        
+            
         #deleteConfirmModal .modal-footer {
-            background: #f8f9fa !important;
-            border-top: 1px solid #dee2e6 !important;
+            background: rgba(0, 212, 255, 0.1) !important;
+            border-top: 1px solid var(--cyber-primary) !important;
         }
-        
+            
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .modal-content {
@@ -847,4 +1221,4 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     {% block scripts %}{% endblock %}
 </body>
-</html> 
+</html>

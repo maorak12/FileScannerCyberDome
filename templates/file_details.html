@@ -5,37 +5,50 @@
 {% block scripts %}
 <script>
 function deleteFileFromDetails(fileId, filename) {
-    if (confirm(`Are you sure you want to delete "${filename}"?\n\nThis action cannot be undone and will remove the file from both the database and filesystem.`)) {
-        // Show loading state
-        const deleteBtn = event.target.closest('button');
-        const originalContent = deleteBtn.innerHTML;
-        deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Deleting...';
-        deleteBtn.disabled = true;
-        
-        fetch(`/file/${fileId}/delete`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Show success message and redirect
-                alert(data.message);
+    // Show the delete modal instead of using confirm()
+    document.getElementById('deleteFileName').textContent = filename;
+    document.getElementById('deleteFileModal').classList.add('show');
+}
+
+function hideDeleteModal() {
+    document.getElementById('deleteFileModal').classList.remove('show');
+}
+
+function confirmDeleteFile() {
+    const fileId = {{ file_info[0] }};
+    const filename = '{{ file_info[1] }}';
+    
+    // Show loading state
+    const deleteBtn = document.getElementById('confirmDeleteFileBtn');
+    const originalContent = deleteBtn.innerHTML;
+    deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Deleting...';
+    deleteBtn.disabled = true;
+    
+    fetch(`/file/${fileId}/delete`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message and redirect
+            showAlert('success', data.message);
+            setTimeout(() => {
                 window.location.href = '{{ url_for("list_files") }}';
-            } else {
-                throw new Error(data.error || 'Failed to delete file');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert(`Error deleting file: ${error.message}`);
-            // Restore button state
-            deleteBtn.innerHTML = originalContent;
-            deleteBtn.disabled = false;
-        });
-    }
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Failed to delete file');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', `Error deleting file: ${error.message}`);
+        // Restore button state
+        deleteBtn.innerHTML = originalContent;
+        deleteBtn.disabled = false;
+    });
 }
 
 // Description editing functions
@@ -155,6 +168,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (textarea) {
         textarea.addEventListener('input', updateCharCount);
     }
+    
+    // Close modal when clicking backdrop
+    const deleteModal = document.getElementById('deleteFileModal');
+    deleteModal.addEventListener('click', function(e) {
+        if (e.target === deleteModal) {
+            hideDeleteModal();
+        }
+    });
 });
 </script>
 {% endblock %}
@@ -172,10 +193,48 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+<!-- File Analysis Summary -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card animate-fade-in">
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3 animate-slide-left">
+                        <div class="border-end">
+                            <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
+                                {{ yara_matches|length }}
+                            </h3>
+                            <p class="text-muted">YARA Matches</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h3 class="text-info">{{ similar_files|length }}</h3>
+                            <p class="text-muted">Exact YARA Matches</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 animate-slide-left" style="animation-delay: 0.2s;">
+                        <div class="border-end">
+                            <h3 class="text-primary">{{ "{:.2f}".format(file_info[3] / (1024 * 1024)) }}</h3>
+                            <p class="text-muted">File Size (MB)</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 animate-slide-left" style="animation-delay: 0.3s;">
+                        <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
+                            {% if yara_matches|length > 0 %}SUSPICIOUS{% else %}CLEAN{% endif %}
+                        </h3>
+                        <p class="text-muted">Status</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-lg-8">
         <!-- File Information -->
-        <div class="card mb-4">
+        <div class="card mb-4 animate-slide-left">
             <div class="card-header">
                 <h4 class="mb-0">
                     <i class="fas fa-file-code me-2"></i>File Information
@@ -237,12 +296,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                 </div>
-                </div>
             </div>
         </div>
 
         <!-- YARA Rule Matches -->
-        <div class="card mb-4">
+        <div class="card mb-4 animate-slide-left" style="animation-delay: 0.1s;">
             <div class="card-header">
                 <h4 class="mb-0">
                     <i class="fas fa-shield-virus me-2"></i>YARA Rule Matches
@@ -258,9 +316,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     
                     {% for match in yara_matches %}
-                    <div class="yara-match">
+                    <div class="yara-match mb-3 p-3 border border-warning rounded">
                         <div class="d-flex justify-content-between align-items-start">
-                            <div>
+                            <div class="flex-grow-1">
                                 <h6 class="mb-2">
                                     <i class="fas fa-bug me-2"></i>{{ match[2] }}
                                 </h6>
@@ -273,7 +331,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <p class="mb-0"><strong>Match Offset:</strong> {{ match[5] }}</p>
                                 {% endif %}
                             </div>
-                            <span class="badge bg-danger">MATCH</span>
+                            <span class="badge bg-danger ms-2">MATCH</span>
                         </div>
                     </div>
                     {% endfor %}
@@ -288,24 +346,24 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 
     <div class="col-lg-4">
-        <!-- Similar Files -->
-        <div class="card">
+        <!-- Exact YARA Matches -->
+        <div class="card mb-3 animate-slide-right">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="fas fa-search-plus me-2"></i>Similar Files
+                    <i class="fas fa-copy me-2"></i>Exact YARA Matches
                     <span class="badge bg-info ms-2">{{ similar_files|length }}</span>
                 </h5>
             </div>
             <div class="card-body">
                 {% if similar_files %}
                     <p class="text-muted small mb-3">
-                        Files with similar YARA rule patterns (minimum 2 common rules)
+                        Files with exactly the same set of YARA rule matches (identical threat profile)
                     </p>
                     
                     {% for file in similar_files %}
-                    <div class="similar-file">
+                    <div class="similar-file mb-3 p-2 border border-info rounded">
                         <div class="d-flex justify-content-between align-items-start">
-                            <div>
+                            <div class="flex-grow-1">
                                 <h6 class="mb-2">
                                     <i class="fas fa-file-code me-2"></i>
                                     <a href="{{ url_for('file_details', file_id=file.id) }}" 
@@ -314,7 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </a>
                                 </h6>
                                 <p class="mb-1 small">
-                                    <strong>Common Rules:</strong> {{ file.common_rules }}
+                                    <strong>Matching Rules:</strong> {{ file.common_rules }}
                                 </p>
                                 <p class="mb-1 small">
                                     <strong>Upload Date:</strong> {{ file.upload_date }}
@@ -324,7 +382,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <code class="text-white">{{ file.file_hash[:16] }}...</code>
                                 </p>
                             </div>
-                            <span class="badge bg-info">{{ file.common_rules }}</span>
+                            <span class="badge bg-info ms-2">{{ file.common_rules }}</span>
                         </div>
                         
                         {% if file.rule_names %}
@@ -345,14 +403,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 {% else %}
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        No similar files found with matching YARA rules.
+                        No other files found with exactly the same YARA rule matches.
                     </div>
                 {% endif %}
             </div>
         </div>
 
         <!-- Actions -->
-        <div class="card mt-3">
+        <div class="card animate-slide-right" style="animation-delay: 0.1s;">
             <div class="card-body">
                 <h6 class="card-title">Actions</h6>
                 <div class="d-grid gap-2">
@@ -372,45 +430,28 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- File Analysis Summary -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-chart-bar me-2"></i>Analysis Summary
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <div class="border-end">
-                            <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
-                                {{ yara_matches|length }}
-                            </h3>
-                            <p class="text-muted">YARA Matches</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="border-end">
-                            <h3 class="text-info">{{ similar_files|length }}</h3>
-                            <p class="text-muted">Similar Files</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="border-end">
-                            <h3 class="text-primary">{{ "{:.2f}".format(file_info[3] / (1024 * 1024)) }}</h3>
-                            <p class="text-muted">File Size (MB)</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <h3 class="text-{% if yara_matches|length > 0 %}danger{% else %}success{% endif %}">
-                            {% if yara_matches|length > 0 %}SUSPICIOUS{% else %}CLEAN{% endif %}
-                        </h3>
-                        <p class="text-muted">Status</p>
-                    </div>
-                </div>
-            </div>
+<!-- Delete File Confirmation Modal -->
+<div id="deleteFileModal" class="rule-preview-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 500px; height: auto;">
+        <div class="modal-header">
+            <h5 class="modal-title">
+                <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                Delete File
+            </h5>
+            <button type="button" class="btn-close" onclick="hideDeleteModal()" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete the file <strong id="deleteFileName"></strong>?</p>
+            <p class="text-muted">This action cannot be undone. The file will be permanently removed from both the database and filesystem.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideDeleteModal()">
+                <i class="fas fa-times me-2"></i>Cancel
+            </button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteFileBtn" onclick="confirmDeleteFile()">
+                <i class="fas fa-trash me-2"></i>Delete File
+            </button>
         </div>
     </div>
 </div>
