@@ -10,6 +10,7 @@ import requests
 import zipfile
 import tempfile
 import shutil
+import sys
 from config import get_config
 from yara_cache import yara_cache
 
@@ -801,8 +802,15 @@ if __name__ == '__main__':
         print(f"Warning: Failed to initialize YARA cache: {e}")
     
     print(f"Starting Cyberdome Sentinel on {app.config['HOST']}:{app.config['PORT']}")
-    app.run(
-        host=app.config['HOST'],
-        port=app.config['PORT'],
-        debug=app.config['DEBUG']
-    ) 
+    # Disable reloader/debugger if not attached to a TTY to avoid termios errors
+    run_kwargs = {
+        'host': app.config['HOST'],
+        'port': app.config['PORT'],
+        'debug': app.config['DEBUG']
+    }
+    if not sys.stdin.isatty():
+        run_kwargs.update({'use_reloader': False, 'use_debugger': False})
+    else:
+        # Still prefer no reloader to avoid double-process issues
+        run_kwargs.setdefault('use_reloader', False)
+    app.run(**run_kwargs) 
